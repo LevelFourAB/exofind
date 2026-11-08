@@ -554,6 +554,47 @@ public class IndexRegistryTest {
 	}
 
 	/**
+	 * A create of a generation that takes its registration back removes the
+	 * generation while the registry still holds that registration.
+	 */
+	@Test
+	public void testRemovingAGenerationRegistrationTakesTheGenerationOut() {
+		registry.create("books", "1");
+		var added = registry.addGeneration("books", "2").generation("2").orElseThrow();
+
+		assertThat(registry.removeCreatedGeneration("books", added), is(true));
+		assertThat(registry.get("books").orElseThrow().hasGeneration("2"), is(false));
+	}
+
+	/**
+	 * Another node can delete the generation and create it again, in the same
+	 * millisecond, before a create takes its registration back. The later
+	 * registration stays.
+	 */
+	@Test
+	public void testRemovingAGenerationRegistrationLeavesALaterOneWithTheSameTime() {
+		registry.create("books", "1");
+		var added = registry.addGeneration("books", "2").generation("2").orElseThrow();
+
+		var other = new IndexRegistry(storage, Duration.ofMinutes(5));
+		other.removeGeneration("books", "2");
+		other.addGeneration("books", "2");
+
+		var store = storage.stored().toBuilder();
+		var entry = store.getIndexes(0).toBuilder();
+		for(int i = 0; i < entry.getGenerationsCount(); i++) {
+			if(entry.getGenerations(i).getName().equals("2")) {
+				entry.setGenerations(i, entry.getGenerations(i).toBuilder()
+					.setCreatedAt(added.createdAt().toEpochMilli()));
+			}
+		}
+		storage.set(store.setIndexes(0, entry).build());
+
+		assertThat(registry.removeCreatedGeneration("books", added), is(false));
+		assertThat(registry.get("books").orElseThrow().hasGeneration("2"), is(true));
+	}
+
+	/**
 	 * Every write after the create keeps the registration identifiers, so a
 	 * create can still find its own registration later.
 	 */

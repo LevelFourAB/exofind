@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.atomic.AtomicReference;
@@ -222,6 +223,133 @@ public class IndexesCreateDuringDeleteTest {
 			assertThat(registry.get("books").isPresent(), is(false));
 		} finally {
 			node.close();
+		}
+	}
+
+	@Test
+	void aGenerationCreateDoesNotTakeTheMarkOfADeleteThatCameAfterIt() throws IOException {
+		// Given two nodes over one registry and one storage, and books live on its first generation
+		var storage = new InMemoryRegistryStorage();
+		var registryA = new IndexRegistry(storage, Duration.ofMinutes(5));
+		var registryB = new IndexRegistry(storage, Duration.ofMinutes(5));
+
+		var hook = new AtomicReference<Runnable>();
+		var removals = new RecordingIndexRemovals() {
+			@Override
+			public void prepareForGeneration(IndexName generation) {
+				var run = hook.getAndSet(null);
+				if(run != null) {
+					run.run();
+				}
+
+				super.prepareForGeneration(generation);
+			}
+		};
+
+		var nodeA = newNode(storageDirectory.resolve("a"), registryA, removals);
+		var nodeB = newNode(storageDirectory.resolve("b"), registryB, removals);
+		try {
+			nodeA.create("books", keyed());
+
+			// And node B deletes books@2 right after node A registered it
+			hook.set(() -> {
+				try {
+					registryB.refresh();
+					nodeB.delete("books@2");
+				} catch(IOException e) {
+					throw new RuntimeException(e);
+				}
+			});
+
+			// When node A goes on with the create of books@2
+			RuntimeException failure = null;
+			try {
+				nodeA.createGeneration("books@2", keyed());
+			} catch(RuntimeException e) {
+				failure = e;
+			}
+
+			// Then the registry does not name the generation
+			registryB.refresh();
+			assertThat(registryB.get("books").orElseThrow().hasGeneration("2"), is(false));
+
+			// And a mark of the delete still stands over it
+			assertThat(
+				"mark of the delete taken by the create",
+				removals.markedAt(IndexName.of("books", "2")).isPresent(),
+				is(true)
+			);
+
+			// And the create answered with a conflict
+			assertThat(
+				"create of a generation deleted meanwhile answered " + failure,
+				failure instanceof RegistryException,
+				is(true)
+			);
+		} finally {
+			nodeA.close();
+			nodeB.close();
+		}
+	}
+
+	@Test
+	void aFailedGenerationCreateDoesNotUnregisterAGenerationAnotherNodeCreatedMeanwhile()
+		throws IOException
+	{
+		// Given two nodes over one registry, and books live on its first generation
+		var storage = new InMemoryRegistryStorage();
+		var registryA = new IndexRegistry(storage, Duration.ofMinutes(5));
+		var registryB = new IndexRegistry(storage, Duration.ofMinutes(5));
+
+		var removalsB = new RecordingIndexRemovals();
+		var hook = new AtomicReference<Runnable>();
+		var removalsA = new RecordingIndexRemovals() {
+			@Override
+			public void prepareForGeneration(IndexName generation) {
+				var run = hook.getAndSet(null);
+				if(run != null) {
+					run.run();
+				}
+
+				throw new UncheckedIOException(new IOException("Storage could not be cleared"));
+			}
+		};
+
+		var nodeA = newNode(storageDirectory.resolve("a"), registryA, removalsA);
+		var nodeB = newNode(storageDirectory.resolve("b"), registryB, removalsB);
+		try {
+			nodeB.create("books", keyed());
+			registryA.refresh();
+
+			// And node B deletes books@2 and creates it again, in a later millisecond, after node A registered it
+			hook.set(() -> {
+				var registeredByA = Instant.now().toEpochMilli();
+				while(Instant.now().toEpochMilli() <= registeredByA) {
+					Thread.onSpinWait();
+				}
+
+				try {
+					registryB.refresh();
+					nodeB.delete("books@2");
+					nodeB.createGeneration("books@2", keyed());
+				} catch(IOException e) {
+					throw new RuntimeException(e);
+				}
+			});
+
+			// When the create of books@2 on node A fails after the registration
+			assertThrows(UncheckedIOException.class, () -> nodeA.createGeneration("books@2", keyed()));
+
+			// Then the generation node B created is still registered
+			registryB.refresh();
+			assertThat(
+				"failed create removed the generation of another node",
+				registryB.get("books").orElseThrow().hasGeneration("2"),
+				is(true)
+			);
+		} finally {
+			nodeA.close();
+			nodeB.close();
 		}
 	}
 

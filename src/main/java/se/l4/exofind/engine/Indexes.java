@@ -3127,6 +3127,10 @@ public class Indexes implements RegistryPoller.Listener {
 	 * @throws IndexStorageHeldException
 	 *   if the storage, or in local storage mode the directory, of the
 	 *   generation holds data that nothing said was deleted
+	 * @throws RegistryException
+	 *   if the registry could not be read or written, or if another node
+	 *   deleted the generation, or deleted and created it again, while this
+	 *   creation ran
 	 */
 	public Index createGeneration(String name, IndexDef def) {
 		var generation = IndexName.parse(name);
@@ -3138,15 +3142,54 @@ public class Indexes implements RegistryPoller.Listener {
 
 		lifecycleLock.lock();
 		try {
-			registry.addGeneration(generation.index(), generation.generation());
+			var registered = registry.addGeneration(generation.index(), generation.generation())
+				.generation(generation.generation())
+				.orElseThrow();
 
+			var removedMeanwhile = false;
 			try {
 				// Only this generation; the rest of the index is in use
 				prepareForCreation(generation, false);
 
+				/*
+				 * A delete on another node can land between the registration
+				 * and the clearing, and the clearing then takes the mark that
+				 * delete left. So the stored registry is read again, as the
+				 * create of an index does. When the generation is gone, the
+				 * mark is put back. When another node created the generation
+				 * again, that node cleared the prefix for its own generation,
+				 * and this create must not open it.
+				 */
+				if(registry.refresh()) {
+					var current = registry.get(generation.index())
+						.flatMap(entry -> entry.generation(generation.generation()));
+
+					if(current.isEmpty()) {
+						removedMeanwhile = true;
+						markRemoved(generation);
+						throw RegistryException.conflict();
+					}
+
+					if(!current.get().isSameRegistration(registered)) {
+						throw RegistryException.conflict();
+					}
+				}
+
 				return openWithDefinition(generation, def);
 			} catch(RuntimeException e) {
-				registry.removeGeneration(generation.index(), generation.generation());
+				if(!removedMeanwhile) {
+					/*
+					 * Only this registration. Another node can delete the
+					 * generation and create it again before the failure, and
+					 * its generation is registered under the same name.
+					 */
+					try {
+						registry.removeCreatedGeneration(generation.index(), registered);
+					} catch(RuntimeException removeFailed) {
+						e.addSuppressed(removeFailed);
+					}
+				}
+
 				throw e;
 			}
 		} finally {

@@ -716,6 +716,81 @@ public class IndexRegistry {
 	}
 
 	/**
+	 * Take a generation out of the registry while the stored registry still
+	 * holds the registration that {@link #addGeneration} made, for a create
+	 * that takes its own generation back. A generation of the same name that
+	 * another node deleted and created again since is another registration,
+	 * and is left in the registry. See
+	 * {@link RegisteredIndex.Generation#isSameRegistration}.
+	 *
+	 * <p>The generation stays when the index answers for it, or when the index
+	 * needs features this build does not have.
+	 *
+	 * @param index
+	 * @param created
+	 *   the generation as {@link #addGeneration} answered it
+	 * @return
+	 *   whether the generation was removed. {@code false} when the registry no
+	 *   longer holds the generation, holds a later registration of it, or
+	 *   keeps it for one of the reasons above
+	 * @throws RegistryException
+	 *   if the registry could not be read or written
+	 */
+	public boolean removeCreatedGeneration(String index, RegisteredIndex.Generation created) {
+		if(!refresh() || !isRemovableGeneration(snapshot.get().indexes(), index, created)) {
+			return false;
+		}
+
+		var removed = new boolean[1];
+		change(indexes -> {
+			removed[0] = isRemovableGeneration(indexes, index, created);
+			if(!removed[0]) {
+				return indexes;
+			}
+
+			var entry = indexes.detect(existing -> existing.name().equals(index));
+			return indexes.reject(existing -> existing.name().equals(index))
+				.toList()
+				.with(new RegisteredIndex(
+					entry.name(),
+					entry.generations().reject(g -> g.name().equals(created.name())),
+					entry.live(),
+					entry.createdAt(),
+					entry.registration(),
+					entry.requiredFeatures(),
+					entry.settingsVersion()
+				));
+		});
+
+		if(removed[0]) {
+			logger.atInfo()
+				.addKeyValue("index", index)
+				.addKeyValue("generation", created.name())
+				.log("Removed generation");
+		}
+
+		return removed[0];
+	}
+
+	/**
+	 * Whether the indexes hold the same registration of a generation as
+	 * {@code registered}, in an entry where it can be removed.
+	 */
+	private static boolean isRemovableGeneration(
+		ListIterable<RegisteredIndex> indexes,
+		String index,
+		RegisteredIndex.Generation registered
+	) {
+		var entry = indexes.detect(existing -> existing.name().equals(index));
+		return entry != null
+			&& entry.isSupported()
+			&& !registered.name().equals(entry.live())
+			&& entry.generation(registered.name())
+				.filter(g -> g.isSameRegistration(registered))
+				.isPresent();
+	}
+
+	/**
 	 * Whether the indexes hold the same registration as {@code registered}.
 	 */
 	private static boolean isRegistration(
