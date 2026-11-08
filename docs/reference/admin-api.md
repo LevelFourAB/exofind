@@ -771,7 +771,7 @@ The request body accepts an optional JSON object:
 
 The request body contains the following fields:
 
-- `promoteNewest`: A boolean. When `true`, each index created by the repair answers for its highest-numbered generation. Hand-named generations are not selected. Indexes that are already registered keep what they answer for.
+- `promoteNewest`: A boolean. When `true`, each index created by the repair answers for its highest-numbered generation. Hand-named generations are not selected. The target of a reindex job that did not finish with its promote is not selected, and no generation is selected for an index whose reindex record cannot be read. Indexes that are already registered keep what they answer for.
 - `restore`: A list of names of deleted indexes (`books`) or generations (`books@2`) whose storage the sweep has not removed yet. Before it lists the storage, the repair writes each removal mark again with the current time, which stops a sweep that is removing the entry. The repair then registers what each named entry holds like any other unregistered storage, and removes the removal mark from it. A name whose storage holds no `synced` generation keeps its mark, and the sweep removes it once the new time is older than `EXOFIND_INDEXES_REMOVAL_GRACE`. A repair that fails also leaves the marks with the new time. A name without a mark changes nothing.
 
 A successful repair returns a summary of the changes:

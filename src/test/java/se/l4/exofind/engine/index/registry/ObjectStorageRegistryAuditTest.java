@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Optional;
 
 import org.apache.commons.lang3.RandomStringUtils;
@@ -21,6 +22,9 @@ import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.index.state.ObjectStorageIndexRemovals;
 import se.l4.exofind.engine.index.state.TestObjectStorage;
+import se.l4.exofind.engine.reindex.ObjectStorageReindexJobStorage;
+import se.l4.exofind.engine.reindex.ReindexJobStore;
+import se.l4.exofind.engine.reindex.ReindexPhaseStore;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -159,6 +163,53 @@ public class ObjectStorageRegistryAuditTest {
 		assertThat(indexes.collect(RegisteredIndex::name), contains("books", "movies"));
 		assertThat(indexes.getFirst().live(), is("2"));
 		assertThat(indexes.getLast().live(), is("1"));
+	}
+
+	/**
+	 * A reindex target pushes while the job copies into it, so its prefix
+	 * holds a manifest long before it holds every document. A repair after a
+	 * lost registry must not make such a target the generation the index
+	 * answers for.
+	 */
+	@Test
+	public void testRepairDoesNotPromoteAnUnfinishedReindexTarget() throws IOException {
+		// Given books@1 and books@2 with manifests, where books@2 is the target of a reindex still copying
+		putManifest("books", "1");
+		putManifest("books", "2");
+
+		var now = Instant.now();
+		new ObjectStorageReindexJobStorage(storage).write(
+			"books",
+			ReindexJobStore.newBuilder()
+				.setId("job-1")
+				.setIndex("books")
+				.setTarget("2")
+				.setSource("1")
+				.setPhase(ReindexPhaseStore.REINDEX_PHASE_COPYING)
+				.setCursor("k100")
+				.setDocumentsCopied(100)
+				.setSourceDocCount(10000)
+				.setStartedBy("tester")
+				.setNode("node-a")
+				.setStartedAt(now.toEpochMilli())
+				.setUpdatedAt(now.toEpochMilli())
+				.build(),
+			null
+		);
+
+		// When the operator repairs the lost registry and asks for the newest generation to be promoted
+		var result = audit.repair(true, Lists.immutable.empty());
+
+		// Then books answers from books@1
+		var indexes = RegistryCodec.fromStored(
+			((RegistryStorage.Read.Loaded) registryStorage.read(null)).indexes()
+		);
+		assertThat(result.createdIndexes(), contains("books"));
+		assertThat(
+			"unfinished reindex target promoted: " + result.promoted(),
+			indexes.getFirst().live(),
+			is("1")
+		);
 	}
 
 	/**

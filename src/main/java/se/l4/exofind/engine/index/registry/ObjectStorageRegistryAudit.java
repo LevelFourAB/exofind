@@ -14,6 +14,9 @@ import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.state.IndexRemovals;
 import se.l4.exofind.engine.index.state.LocalCopy;
 import se.l4.exofind.engine.logging.Log;
+import se.l4.exofind.engine.reindex.ObjectStorageReindexJobStorage;
+import se.l4.exofind.engine.reindex.ReindexJobStorage;
+import se.l4.exofind.engine.reindex.ReindexPhaseStore;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -48,6 +51,11 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * {@link IndexRemovals#holdForRestore(IndexName)}. A running sweep then stops
  * at its next batch, and the listing shows what the sweep left. A batch that
  * the sweep sent before the hold can still remove objects after the listing.
+ *
+ * <p>A reindex target pushes while the job copies into it, so its prefix
+ * holds a manifest before the target holds every document. The audit reads
+ * the reindex record of each index, and it does not propose or promote the
+ * target of a job that did not end with a promote of that target.
  */
 public class ObjectStorageRegistryAudit implements RegistryAudit {
 	private static final Log logger = Log.of(ObjectStorageRegistryAudit.class);
@@ -59,11 +67,18 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	 */
 	private static final int WRITE_ATTEMPTS = 3;
 
+	/**
+	 * Stands for every generation of an index, when its reindex record can
+	 * not be read. No generation name can be this value.
+	 */
+	private static final String ANY_GENERATION = "*";
+
 	private final S3Client client;
 	private final String bucket;
 	private final ObjectStorage storage;
 	private final RegistryStorage registry;
 	private final IndexRemovals removals;
+	private final ReindexJobStorage reindexJobs;
 
 	public ObjectStorageRegistryAudit(
 		ObjectStorage storage,
@@ -75,6 +90,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		this.storage = storage;
 		this.registry = registry;
 		this.removals = removals;
+		this.reindexJobs = new ObjectStorageReindexJobStorage(storage);
 	}
 
 	@Override
@@ -82,7 +98,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		var read = readRegistry();
 		var held = listHeld();
 
-		return buildReport(read, held);
+		return buildReport(read, held, unfinishedTargets(held));
 	}
 
 	@Override
@@ -106,6 +122,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		 * what they stand over.
 		 */
 		var restoring = dropMarks(held, restore);
+		var unfinished = promoteNewest ? unfinishedTargets(held) : Map.<String, String>of();
 
 		for(int attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
 			var read = readRegistry();
@@ -117,9 +134,9 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 			 * until none has landed, so an index on its way out is not
 			 * registered again moments before its mark arrives.
 			 */
-			var merged = merge(read, held, promoteNewest);
+			var merged = merge(read, held, promoteNewest, unfinished);
 			while(remark(held, merged, restoring)) {
-				merged = merge(read, held, promoteNewest);
+				merged = merge(read, held, promoteNewest, unfinished);
 			}
 
 			if(
@@ -500,6 +517,45 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		return names;
 	}
 
+	/**
+	 * The target of the reindex job of each held index, when that job did
+	 * not end with a promote of its target. A job in a phase this build does
+	 * not know counts as one that did not end.
+	 *
+	 * @return
+	 *   the target generation by index name. {@link #ANY_GENERATION} when the
+	 *   record could not be read, as the target is then not known
+	 */
+	private Map<String, String> unfinishedTargets(HeldIndexes held) {
+		var targets = new TreeMap<String, String>();
+
+		for(var index : held.indexes().keySet()) {
+			try {
+				var stored = reindexJobs.read(index);
+				if(stored.isEmpty()) {
+					continue;
+				}
+
+				var record = stored.get().record();
+				if(record.getPhase() != ReindexPhaseStore.REINDEX_PHASE_DONE && record.hasTarget()) {
+					targets.put(index, record.getTarget());
+				}
+			} catch(IOException e) {
+				logger.atWarn()
+					.addKeyValue("index", index)
+					.setCause(e)
+					.log(
+						"Could not read the reindex record of the index, so no generation of it"
+							+ " is proposed or promoted; " + e.getMessage()
+					);
+
+				targets.put(index, ANY_GENERATION);
+			}
+		}
+
+		return targets;
+	}
+
 	private boolean hasManifest(IndexName generation) {
 		try {
 			client.headObject(
@@ -527,7 +583,11 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 		}
 	}
 
-	private static RegistryAuditReport buildReport(RegistryRead read, HeldIndexes held) {
+	private static RegistryAuditReport buildReport(
+		RegistryRead read,
+		HeldIndexes held,
+		Map<String, String> unfinished
+	) {
 		/*
 		 * Joined at the stored level rather than through RegistryCodec, so an
 		 * entry is compared under exactly the name it is stored as.
@@ -582,7 +642,9 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 				name,
 				entry != null,
 				entry != null && entry.hasLive() ? entry.getLive() : null,
-				entry == null && removedAt == null ? newestSynced(heldGenerations) : null,
+				entry == null && removedAt == null
+					? newestSynced(heldGenerations, unfinished.get(name))
+					: null,
 				removedAt,
 				generations.toImmutable()
 			));
@@ -606,7 +668,8 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	private static Merge merge(
 		RegistryRead read,
 		HeldIndexes held,
-		boolean promoteNewest
+		boolean promoteNewest,
+		Map<String, String> unfinished
 	) {
 		/*
 		 * Built from the stored bytes rather than through RegistryCodec, so
@@ -678,7 +741,10 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 				}
 
 				if(promoteNewest) {
-					var live = newestSynced(index.getValue().generations());
+					var live = newestSynced(
+						index.getValue().generations(),
+						unfinished.get(index.getKey())
+					);
 					if(live != null) {
 						entry.setLive(live);
 						promoted.add(index.getKey() + "@" + live);
@@ -707,8 +773,20 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 	 * engine names them, so the highest number is the one created last; a
 	 * name given by hand says nothing about age and is never picked. A
 	 * generation a delete marked on its own is not up for promotion either.
+	 *
+	 * @param unfinishedTarget
+	 *   the target of a reindex job that did not end with its promote, which
+	 *   is not picked. {@link #ANY_GENERATION} picks nothing, and {@code null}
+	 *   leaves every generation up for promotion
 	 */
-	private static String newestSynced(Map<String, HeldGeneration> generations) {
+	private static String newestSynced(
+		Map<String, HeldGeneration> generations,
+		String unfinishedTarget
+	) {
+		if(ANY_GENERATION.equals(unfinishedTarget)) {
+			return null;
+		}
+
 		String newest = null;
 		int newestNumber = 0;
 
@@ -716,6 +794,7 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 			if(
 				generation.getValue().stored() != RegistryAuditReport.Stored.SYNCED
 					|| generation.getValue().removedAt() != null
+					|| generation.getKey().equals(unfinishedTarget)
 			) {
 				continue;
 			}

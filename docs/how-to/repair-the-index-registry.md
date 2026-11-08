@@ -195,7 +195,10 @@ features, and live generation assignments.
    }
    ```
    **Note:** `promoteNewest` only promotes generations with numeric names.
-   Generations with non-numeric names are not promoted automatically.
+   Generations with non-numeric names are not promoted automatically. The
+   target of a reindex job is not promoted unless the job finished with its
+   promote. If the reindex record of an index cannot be read, no generation of
+   that index is promoted.
 
    To restore marked storage during the repair, provide the `restore` field with
    a list of index or generation names:
