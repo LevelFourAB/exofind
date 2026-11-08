@@ -24,7 +24,7 @@ import se.l4.exofind.engine.index.registry.IndexRegistry;
 import se.l4.exofind.engine.index.registry.LocalRegistryStorage;
 import se.l4.exofind.engine.index.registry.RegistryHints;
 import se.l4.exofind.engine.index.schema.IndexDef;
-import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.index.state.NoopRemoteSyncProvider;
 import se.l4.exofind.engine.index.state.RecordingIndexRemovals;
 import se.l4.exofind.engine.metrics.RequestMetrics;
 import se.l4.exofind.engine.storage.StorageMode;
@@ -93,7 +93,7 @@ public class IndexesPreloadTest {
 		var registry = registry();
 		var node = new Indexes(
 			state,
-			new NoopSyncProvider(),
+			new NoopRemoteSyncProvider(),
 			registry,
 			new RegistryHints(registry, StorageMode.LOCAL),
 			new RecordingIndexRemovals(),

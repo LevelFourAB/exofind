@@ -215,6 +215,64 @@ public class IndexesLostRegistryTest {
 	}
 
 	/**
+	 * In local mode the directory of an index is the only copy of it. When
+	 * the registry names an index whose directory is gone, a partial restore
+	 * or a missing volume, the node must say the data is missing rather than
+	 * serve a new, empty index under the name.
+	 */
+	@Test
+	public void testLocalModeDoesNotServeARegisteredIndexWhoseDirectoryIsGoneAsEmpty()
+		throws Exception
+	{
+		// Given a local mode registry that names books, which held one committed document
+		var seeder = node();
+		try {
+			seeder.create("books", keyed());
+			seeder.write("books", index -> {
+				try {
+					index.addDocument(new Document(new Document.Value("id", "1")));
+					index.commit();
+					return null;
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				}
+			});
+		} finally {
+			seeder.close();
+		}
+
+		// And the directory of books is gone
+		try(var paths = Files.walk(dir("books"))) {
+			for(var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+				Files.delete(path);
+			}
+		}
+
+		// When a request opens books
+		var node = node();
+		node.refresh();
+
+		RuntimeException failure = null;
+		Optional<se.l4.exofind.engine.index.Index> opened = Optional.empty();
+		try {
+			opened = node.get("books");
+		} catch(RuntimeException e) {
+			failure = e;
+		}
+
+		// Then the open fails rather than serve an empty index
+		var served = opened.isPresent() ? opened.get().getDocumentCount() + " documents" : "-";
+		assertThat(
+			"registered index with no directory served as an index of " + served,
+			failure != null || opened.isEmpty(),
+			is(true)
+		);
+
+		// And no new directory is created for it
+		assertThat(Files.exists(dir("books")), is(false));
+	}
+
+	/**
 	 * A local mode node over the shared directory that creates
 	 * {@code books} with one committed document and shuts down.
 	 */

@@ -55,6 +55,20 @@ returns HTTP `409` with `index:generation:storage_held` and removes nothing. The
 no definition, change log, or Lucene commit does not refuse the request, and
 the request removes it.
 
+The reverse case is a registry that names an index whose directory is gone,
+for example after a partial restore or when a volume is not mounted. The node
+does not open the index and does not create an empty one in its place.
+Requests for the index return HTTP `500` with `node:error`, and the node logs
+an error with the generation in the `index` field and the directory in the
+`path` field:
+
+```text
+The registry names an index whose local directory is gone, so the index is not opened. Restore the directory, or delete the index
+```
+
+Put the directory back from the same backup as the registry. If the data is
+lost, delete the index and create it again.
+
 Identify registry problems by checking node logs, readiness checks, and index
 listings:
 

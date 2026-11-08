@@ -62,7 +62,9 @@ public interface StateSyncProvider {
 	/**
 	 * Whether the local directories are copies of generations that a remote
 	 * holds. A node removes a local copy that the registry no longer names
-	 * only when this is {@code true}.
+	 * only when this is {@code true}. When this is {@code false}, a node
+	 * refuses to open a generation that the registry names and whose
+	 * directory is gone.
 	 *
 	 * @return
 	 *   {@code false} by default, which is what local storage mode answers:

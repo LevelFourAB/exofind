@@ -166,7 +166,13 @@ public class IndexesTest {
 	 */
 	@Test
 	public void testIndexCreatedElsewhereIsFound() throws IOException {
-		var other = newNode(storageDirectory.resolve("other"), registry(), OptionalInt.empty());
+		var other = newNode(
+			storageDirectory.resolve("other"),
+			registry(),
+			OptionalInt.empty(),
+			new RecordingIndexRemovals(),
+			new NoopRemoteSyncProvider()
+		);
 		try {
 			assertThat(other.getIndexNames(), emptyIterable());
 
@@ -647,7 +653,13 @@ public class IndexesTest {
 	 */
 	@Test
 	public void testCreatingRemovesTheCopyOfADeletedIndex() throws IOException {
-		var other = newNode(storageDirectory.resolve("other"), registry(), OptionalInt.empty());
+		var other = newNode(
+			storageDirectory.resolve("other"),
+			registry(),
+			OptionalInt.empty(),
+			new RecordingIndexRemovals(),
+			new NoopRemoteSyncProvider()
+		);
 		try {
 			indexes.create("books", IndexDef.getDefaultInstance());
 			indexes.createGeneration("books@2", IndexDef.getDefaultInstance());
@@ -679,7 +691,13 @@ public class IndexesTest {
 	 */
 	@Test
 	public void testCreatingAGenerationRemovesTheCopyOfADeletedOne() throws IOException {
-		var other = newNode(storageDirectory.resolve("other"), registry(), OptionalInt.empty());
+		var other = newNode(
+			storageDirectory.resolve("other"),
+			registry(),
+			OptionalInt.empty(),
+			new RecordingIndexRemovals(),
+			new NoopRemoteSyncProvider()
+		);
 		try {
 			indexes.create("books", IndexDef.getDefaultInstance());
 			indexes.createGeneration("books@2", IndexDef.getDefaultInstance());

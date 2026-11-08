@@ -2324,6 +2324,10 @@ public class Indexes implements RegistryPoller.Listener {
 			var dataPath = indexRoot.resolve(index);
 			var createdAt = createdAtOf(parsed);
 
+			if(!syncProvider.hasRemote() && !Files.isDirectory(dataPath)) {
+				refuseMissingLocalData(parsed, dataPath);
+			}
+
 			try {
 				dropCopyOfAnotherGeneration(index, dataPath, createdAt);
 				Files.createDirectories(dataPath);
@@ -2381,6 +2385,43 @@ public class Indexes implements RegistryPoller.Listener {
 		} finally {
 			lock.unlock();
 		}
+	}
+
+	/**
+	 * Refuse to open a generation that the registry names in local storage
+	 * mode and whose directory is gone.
+	 *
+	 * <p>In local storage mode the directory is the only copy of the data. It
+	 * can be gone after a partial restore, a removal by hand, or a volume that
+	 * is not mounted. The writer creates an index where it finds no commit,
+	 * so an open here would serve an empty index under the name, and the next
+	 * write would start a new index where a restore puts the old one back.
+	 * The creation of an index or a generation makes its directory before the
+	 * first open, see {@link #openWithDefinition(IndexName, IndexDef)}.
+	 *
+	 * @throws IndexNotFoundException
+	 *   if a delete removed the generation from the registry after the caller
+	 *   resolved it
+	 * @throws UncheckedIOException
+	 *   always otherwise, with a {@link NoSuchFileException} for the directory
+	 */
+	private void refuseMissingLocalData(IndexName generation, Path dataPath) {
+		// A delete removes the registration before the directory
+		if(!registry.names(generation)) {
+			throw new IndexNotFoundException(generation.toString());
+		}
+
+		logger.atError()
+			.addKeyValue("index", generation.toString())
+			.addKeyValue("path", dataPath.toString())
+			.log("The registry names an index whose local directory is gone, so the index"
+				+ " is not opened. Restore the directory, or delete the index");
+
+		throw new UncheckedIOException(new NoSuchFileException(
+			dataPath.toString(),
+			null,
+			"the local data of the registered index " + generation + " is missing"
+		));
 	}
 
 	/**
@@ -3119,6 +3160,16 @@ public class Indexes implements RegistryPoller.Listener {
 	 */
 	private Index openWithDefinition(IndexName generation, IndexDef def) {
 		var name = generation.toString();
+
+		if(!syncProvider.hasRemote()) {
+			// The open refuses a registered generation with no directory
+			try {
+				Files.createDirectories(indexRoot.resolve(name));
+			} catch(IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		}
+
 		var index = indexes.get(name);
 
 		try {
