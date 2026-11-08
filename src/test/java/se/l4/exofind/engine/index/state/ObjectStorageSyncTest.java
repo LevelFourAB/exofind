@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -18,10 +19,12 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
+import java.util.zip.CRC32C;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.lucene.document.Document;
@@ -48,8 +51,12 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.UnknownFieldSet;
 
 import se.l4.exofind.engine.storage.DurableFiles;
+import se.l4.exofind.engine.storage.ObjectStorage;
 
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.interceptor.Context;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -976,6 +983,87 @@ public class ObjectStorageSyncTest {
 		verifyLocalFile(otherLocalPath, segment1);
 		verifyLocalFile(otherLocalPath, d1);
 		verifyRemoteObject(d1Key);
+	}
+
+	/**
+	 * A body that is changed on its way to the storage, by a faulty proxy on
+	 * a connection without TLS, must not end up named by a manifest. Every
+	 * reader and successor would then fail to verify the file, and only the
+	 * writer would hold the right bytes.
+	 */
+	@Test
+	void anUploadChangedInTransitIsNotNamedByTheManifest() throws Exception {
+		// Given: a client whose upload of one file has one byte changed on the way
+		var storage = new ObjectStorage(
+			Optional.of(TestObjectStorage.url()),
+			TestObjectStorage.auth(),
+			Optional.empty(),
+			TestObjectStorage.BUCKET,
+			Optional.empty(),
+			false,
+			new ExecutionInterceptor() {
+				@Override
+				public Optional<RequestBody> modifyHttpContent(
+					Context.ModifyHttpRequest context,
+					ExecutionAttributes attributes
+				) {
+					if(
+						!(context.request() instanceof PutObjectRequest put)
+							|| !put.key().endsWith("/_3.cfs")
+							|| context.requestBody().isEmpty()
+					) {
+						return context.requestBody();
+					}
+
+					try(var in = context.requestBody().get().contentStreamProvider().newStream()) {
+						var bytes = in.readAllBytes();
+						bytes[bytes.length / 2] ^= 0x01;
+						return Optional.of(RequestBody.fromBytes(bytes));
+					} catch(IOException e) {
+						throw new UncheckedIOException(e);
+					}
+				}
+			}
+		);
+		var damagingSync = newSync(storage.client());
+
+		var segment = createLocalFile("segments_1", 10);
+		var data = createLocalFile("_3.cfs", 2048);
+
+		// When: the file is pushed
+		try {
+			push(damagingSync, segment, data);
+		} catch(IOException e) {
+			// Refusing the push is what keeps the manifest from naming the damaged object
+		}
+
+		// Then: no manifest names an object whose bytes differ from its checksum
+		Manifest manifest;
+		try {
+			manifest = remoteManifest();
+		} catch(S3Exception e) {
+			assertThat(e.statusCode(), is(404));
+			return;
+		}
+
+		for(var file : manifest.getFilesList()) {
+			try(
+				var response = s3Client.getObject(
+					GetObjectRequest.builder()
+						.bucket(TestObjectStorage.BUCKET)
+						.key(bucketPrefix + "/" + (file.hasKey() ? file.getKey() : file.getName()))
+						.build()
+				)
+			) {
+				var checksum = new CRC32C();
+				checksum.update(response.readAllBytes());
+				assertThat(
+					"checksum of the stored " + file.getName(),
+					(int) checksum.getValue(),
+					is(file.getChecksum())
+				);
+			}
+		}
 	}
 
 	/**

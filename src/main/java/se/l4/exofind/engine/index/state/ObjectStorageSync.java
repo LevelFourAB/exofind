@@ -8,10 +8,13 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -122,11 +125,13 @@ public class ObjectStorageSync implements StateSync {
 	private static final SecureRandom SESSION_IDS = new SecureRandom();
 
 	/**
-	 * Errors that describe a temporary condition in the object storage, such as
-	 * throttling or a node being replaced. The same request may very well
-	 * succeed a moment later.
+	 * Errors that describe a temporary condition in the object storage or on
+	 * the way to it, such as throttling, a node being replaced, or a body
+	 * changed in transit. The same request may very well succeed a moment
+	 * later.
 	 */
 	private static final Set<String> TRANSIENT_ERROR_CODES = Set.of(
+		"BadDigest",
 		"InternalError",
 		"RequestTimeout",
 		"ServiceUnavailable",
@@ -495,7 +500,7 @@ public class ObjectStorageSync implements StateSync {
 				var localFileName = localPath.resolve(file.getName());
 				putObject(
 					remotePrefix + "/" + keyOf(file),
-					file.getSize(),
+					file,
 					() -> Files.newInputStream(localFileName)
 				);
 			}
@@ -1302,7 +1307,8 @@ public class ObjectStorageSync implements StateSync {
 		var requestBuilder = PutObjectRequest.builder()
 			.bucket(remoteBucket)
 			.key(remotePrefix + "/" + MANIFEST_NAME)
-			.contentType("application/octet-stream");
+			.contentType("application/octet-stream")
+			.contentMD5(md5Of(bytes));
 
 		if(lastSyncedManifestETag != null) {
 			requestBuilder.ifMatch(lastSyncedManifestETag);
@@ -2413,27 +2419,36 @@ public class ObjectStorageSync implements StateSync {
 	}
 
 	/**
-	 * Upload an object, retrying the upload if the remote fails in a way that
-	 * may resolve itself.
+	 * Upload the file of a manifest entry, retrying the upload if the remote
+	 * fails in a way that may resolve itself.
+	 *
+	 * <p>Every attempt reads the file twice. The first read checks the file
+	 * against the size and the checksum of the entry, and computes the MD5
+	 * digest that the upload sends as {@code Content-MD5}. The storage
+	 * refuses a body that does not match the digest, so a body changed on
+	 * its way to the storage does not become an object that the manifest
+	 * names.
 	 *
 	 * @param object
 	 *   key to store the object under
-	 * @param size
-	 *   size of the object in bytes
+	 * @param file
+	 *   entry the manifest holds for the file
 	 * @param supplier
-	 *   opens the contents to upload, called again for every attempt
+	 *   opens the contents to upload, called twice for every attempt
 	 * @throws IOException
-	 *   if the object could not be uploaded
+	 *   if the file does not hold what the entry describes, or could not be
+	 *   uploaded
 	 */
-	private void putObject(String object, long size, ContentSupplier supplier)
+	private void putObject(String object, ManifestFile file, ContentSupplier supplier)
 		throws IOException {
-		var request = PutObjectRequest.builder()
-			.bucket(remoteBucket)
-			.key(object)
-			.contentType("application/octet-stream")
-			.build();
-
 		withRetries("upload", object, () -> {
+			var request = PutObjectRequest.builder()
+				.bucket(remoteBucket)
+				.key(object)
+				.contentType("application/octet-stream")
+				.contentMD5(checkedMd5Of(file, supplier))
+				.build();
+
 			try(var in = supplier.get()) {
 				logger.atDebug()
 					.addKeyValue("bucket", request.bucket())
@@ -2445,10 +2460,64 @@ public class ObjectStorageSync implements StateSync {
 				 * stream straight through instead of buffering the object to
 				 * find out how large it is.
 				 */
-				client.putObject(request, RequestBody.fromInputStream(in, size));
+				client.putObject(request, RequestBody.fromInputStream(in, file.getSize()));
 				return null;
 			}
 		});
+	}
+
+	/**
+	 * Read the contents of a file, check them against its manifest entry,
+	 * and compute their MD5 digest.
+	 *
+	 * @return
+	 *   the digest in Base64, as {@code Content-MD5} takes it
+	 * @throws IOException
+	 *   if the contents could not be read, or differ in size or checksum
+	 *   from the entry
+	 */
+	private static String checkedMd5Of(ManifestFile file, ContentSupplier supplier)
+		throws IOException {
+		var md5 = newMd5();
+		var checksum = new CRC32C();
+		var buffer = new byte[64 * 1024];
+		long size = 0;
+
+		try(var in = supplier.get()) {
+			int read;
+			while((read = in.read(buffer)) != -1) {
+				md5.update(buffer, 0, read);
+				checksum.update(buffer, 0, read);
+				size += read;
+			}
+		}
+
+		if(size != file.getSize() || (file.hasChecksum() && file.getChecksum() != (int) checksum.getValue())) {
+			throw new IOException(
+				"Local file " + file.getName() + " changed after the manifest was built, refusing to upload it"
+			);
+		}
+
+		return Base64.getEncoder().encodeToString(md5.digest());
+	}
+
+	/**
+	 * Compute the MD5 digest of bytes in memory.
+	 *
+	 * @return
+	 *   the digest in Base64, as {@code Content-MD5} takes it
+	 */
+	private static String md5Of(byte[] bytes) {
+		return Base64.getEncoder().encodeToString(newMd5().digest(bytes));
+	}
+
+	private static MessageDigest newMd5() {
+		try {
+			return MessageDigest.getInstance("MD5");
+		} catch(NoSuchAlgorithmException e) {
+			// Every Java platform must support MD5
+			throw new IllegalStateException(e);
+		}
 	}
 
 	/**
