@@ -2057,11 +2057,10 @@ public class Indexes implements RegistryPoller.Listener {
 				}
 
 				/*
-				 * A copy that holds a commit the remote never got is what a
-				 * failed push on close leaves. A registry that lost the name,
-				 * for example one put back from an older backup, looks the
-				 * same as a delete, and the copy is then the only one of
-				 * those writes.
+				 * A failed push on close leaves a copy that holds a commit the
+				 * remote never got. A registry that lost the name, for example
+				 * one put back from an older backup, looks the same as a
+				 * delete, and the copy is then the only one of those writes.
 				 */
 				var path = indexRoot.resolve(name);
 				if(LocalCopy.hasUnpushedChanges(path)) {
