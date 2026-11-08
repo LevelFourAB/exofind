@@ -236,9 +236,13 @@ message IndexerLeadership {
 		optional string address = 3;
 		/*
 		 * When the claim lapses unless renewed, as milliseconds since the
-		 * Unix epoch. Compared against the clock of whoever reads it, so skew
-		 * between nodes stretches or shrinks the wait - renewal happens well
-		 * inside the duration to absorb that.
+		 * Unix epoch on the wall clock of the node that wrote it. Every
+		 * renewal writes a new value. Wall clocks of two nodes can disagree,
+		 * so a reader does not trust the value alone: it finds the claim
+		 * lapsed only when it has read the same value for one lease on its
+		 * own monotonic clock, and its own wall clock has passed the value.
+		 * Versions that do not keep that record compare the value with their
+		 * wall clock only.
 		 */
 		optional int64 expires_at = 4;
 		/*
@@ -308,8 +312,8 @@ message IndexerLeadership {
 	}
 
 	/*
-	 * At most one claim per index. A claim past its expiry is free to be
-	 * taken, not merely stale.
+	 * At most one claim per index. A claim that has lapsed, as the expiry
+	 * of a claim describes, is free to be taken, not merely stale.
 	 */
 	repeated Claim claims = 1;
 

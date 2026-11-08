@@ -125,10 +125,22 @@ public class ObjectStorageIndexerOwnershipTest {
 	}
 
 	private ObjectStorageIndexerOwnership newOwnership(String node) {
-		return newOwnership(node, null);
+		return newOwnership(node, null, LeaseClock.SYSTEM);
 	}
 
 	private ObjectStorageIndexerOwnership newOwnership(String node, String address) {
+		return newOwnership(node, address, LeaseClock.SYSTEM);
+	}
+
+	private ObjectStorageIndexerOwnership newOwnership(String node, LeaseClock clock) {
+		return newOwnership(node, null, clock);
+	}
+
+	private ObjectStorageIndexerOwnership newOwnership(
+		String node,
+		String address,
+		LeaseClock clock
+	) {
 		var nodeLoads = loads(node);
 		return new ObjectStorageIndexerOwnership(
 			storage,
@@ -138,8 +150,33 @@ public class ObjectStorageIndexerOwnershipTest {
 			names::get,
 			name -> nodeLoads.getOrDefault(name, 0d),
 			(name, count) -> nodeLoads.merge(name, (double) count, Double::sum),
-			name -> flush.apply(name)
+			name -> flush.apply(name),
+			clock
 		);
+	}
+
+	/**
+	 * Clocks of one node whose wall clock is set apart from the wall clock of
+	 * the system by {@link #offsetMillis}, which a test can change to step the
+	 * wall clock. The monotonic clock is the one of the system, because a
+	 * monotonic clock does not step.
+	 */
+	static final class SteppedClock implements LeaseClock {
+		final AtomicLong offsetMillis;
+
+		SteppedClock(long offsetMillis) {
+			this.offsetMillis = new AtomicLong(offsetMillis);
+		}
+
+		@Override
+		public long wallMillis() {
+			return System.currentTimeMillis() + offsetMillis.get();
+		}
+
+		@Override
+		public long monotonicNanos() {
+			return System.nanoTime();
+		}
 	}
 
 	/**
@@ -149,6 +186,14 @@ public class ObjectStorageIndexerOwnershipTest {
 	private ObjectStorageIndexerOwnership newFaultyOwnership(
 		String node,
 		ExecutionInterceptor faults
+	) throws IOException {
+		return newFaultyOwnership(node, faults, LeaseClock.SYSTEM);
+	}
+
+	private ObjectStorageIndexerOwnership newFaultyOwnership(
+		String node,
+		ExecutionInterceptor faults,
+		LeaseClock clock
 	) throws IOException {
 		var faulty = new ObjectStorage(
 			Optional.of(TestObjectStorage.url()),
@@ -168,7 +213,8 @@ public class ObjectStorageIndexerOwnershipTest {
 			names::get,
 			name -> 0d,
 			(name, count) -> {},
-			name -> flush.apply(name)
+			name -> flush.apply(name),
+			clock
 		);
 	}
 
@@ -664,6 +710,87 @@ public class ObjectStorageIndexerOwnershipTest {
 	}
 
 	/**
+	 * The wall clocks of two nodes do not agree. A node whose clock runs
+	 * ahead reads the expiry that another node writes as nearer than it is.
+	 * It must not take a claim that its holder renews every round, and the
+	 * holder must not lose the index.
+	 */
+	@Test
+	void aCandidateWhoseClockRunsAheadDoesNotTakeARenewedClaim() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		// Given: a holds "books" and renews the claim every round
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var holder = start(newOwnership("a", new SteppedClock(0)), revoked);
+		await(() -> holder.contains("books"), "a to take the index");
+		awaitRenewal("books");
+
+		// When: b, whose clock runs 25 s of a 30 s lease ahead of the clock of a, competes
+		var ahead = LEASE.toMillis() * 25 / 30;
+		var other = start(newOwnership("b", new SteppedClock(ahead)));
+		Thread.sleep(LEASE.toMillis() * 4);
+
+		// Then: b did not take the claim, and a did not give the index up
+		assertThat("b took the claim that a renews", other.contains("books"), is(false));
+		assertThat("books was revoked", revoked.contains("books"), is(false));
+		assertThat(holder.contains("books"), is(true));
+	}
+
+	/**
+	 * A wall clock that steps forward does not shorten the claims that the
+	 * node renewed. The holder must keep the index, because no other node
+	 * can take the claim before the lease has passed.
+	 */
+	@Test
+	void aForwardStepOfTheWallClockKeepsTheClaims() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		// Given: a holds "books" and renews the claim every round
+		var clock = new SteppedClock(0);
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(newOwnership("a", clock), revoked);
+		await(() -> owned.contains("books"), "a to take the index");
+		awaitRenewal("books");
+
+		// When: the wall clock of a steps forward by ten leases
+		clock.offsetMillis.addAndGet(LEASE.toMillis() * 10);
+		Thread.sleep(LEASE.toMillis() * 2);
+
+		// Then: a did not give the index up
+		assertThat("books was revoked", revoked.contains("books"), is(false));
+		assertThat(owned.contains("books"), is(true));
+	}
+
+	/**
+	 * A wall clock that steps back does not make the claims of the node last
+	 * longer. A holder that cannot renew must stop writing before another
+	 * node takes the claim, whatever its wall clock says.
+	 */
+	@Test
+	void aBackwardStepOfTheWallClockDoesNotKeepALapsedClaim() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		// Given: a holds "books", and b competes with it
+		var faults = new TableReadFaults();
+		var clock = new SteppedClock(0);
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(newFaultyOwnership("a", faults, clock), revoked);
+		await(() -> owned.contains("books"), "a to take the index");
+
+		var successor = start(newOwnership("b"));
+		awaitRenewal("books");
+
+		// When: a can no longer read the table, and its wall clock steps back by ten leases
+		faults.fail.set(true);
+		clock.offsetMillis.addAndGet(-LEASE.toMillis() * 10);
+
+		// Then: when b takes the lapsed claim, a has already given the index up
+		await(() -> successor.contains("books"), "b to take the lapsed claim");
+		assertThat("a gave the index up before b took it", revoked.contains("books"), is(true));
+		assertThat(owned.contains("books"), is(false));
+	}
+
+	/**
 	 * A gateway or an overloaded storage can apply a write of the table and
 	 * still answer it with a server error. The renewals of the holder then
 	 * land, and the stored claims stay its own. The holder must not take
@@ -1094,7 +1221,8 @@ public class ObjectStorageIndexerOwnershipTest {
 
 	/**
 	 * A lapsed claim names nobody - its holder may be gone - so the index is
-	 * answered like one nothing holds.
+	 * answered like one nothing holds. A node finds a claim lapsed only after
+	 * it has read the same claim for one lease, whatever the expiry says.
 	 */
 	@Test
 	void testLapsedClaimFallsBackToTheCandidates() throws Exception {
@@ -1104,8 +1232,17 @@ public class ObjectStorageIndexerOwnershipTest {
 			List.of(candidate("a", now + 60_000, "http://a:8080"))
 		);
 
+		var ownership = newOwnership("b");
 		assertThat(
-			newOwnership("b").indexerAddress("books"),
+			"a claim read for the first time is live",
+			ownership.indexerAddress("books"),
+			is(Optional.of("http://dead:8080"))
+		);
+
+		Thread.sleep(LEASE.toMillis());
+
+		assertThat(
+			ownership.indexerAddress("books"),
 			is(Optional.of("http://a:8080"))
 		);
 	}
@@ -1168,6 +1305,8 @@ public class ObjectStorageIndexerOwnershipTest {
 	/**
 	 * A lapsed entry names nobody - its holder may be gone - so the overview
 	 * answers it the way it answers an index nothing holds: by leaving it out.
+	 * A node finds an entry lapsed only after it has read the same entry for
+	 * one lease.
 	 */
 	@Test
 	void testOverviewLeavesLapsedEntriesOut() throws Exception {
@@ -1183,7 +1322,16 @@ public class ObjectStorageIndexerOwnershipTest {
 			)
 		);
 
-		var overview = newOwnership("b").overview();
+		var ownership = newOwnership("b");
+		assertThat(
+			"entries read for the first time are live",
+			ownership.overview().orElseThrow().claims().size(),
+			is(2)
+		);
+
+		Thread.sleep(LEASE.toMillis());
+
+		var overview = ownership.overview();
 		assertThat(overview.isPresent(), is(true));
 
 		assertThat(overview.get().candidates().size(), is(1));

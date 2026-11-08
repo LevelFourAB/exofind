@@ -62,6 +62,12 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * limited to a third of a lease. The manifest CAS covers the moment where
  * the node has lost an index but not yet noticed.
  *
+ * <p>The wall clocks of the nodes can disagree, so no node compares an
+ * expiry that another node wrote with its own wall clock. A node times its
+ * own claims on its monotonic clock, from the moment the round that
+ * renewed them read the table. {@link LeaseSightings} decides when an entry
+ * of another node has lapsed.
+ *
  * Even counts can still carry uneven load, so every claim also carries a
  * coarse figure of how heavily its index is written. A node whose total sits
  * well above the least loaded candidate marks one busy claim as offered; an
@@ -222,11 +228,35 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	/**
 	 * When each index claimed ahead of the registry stops being spared the
 	 * drop that clears claims on indexes the registry does not hold, as a
-	 * {@link System#currentTimeMillis()} reading. An entry goes as soon as the
+	 * reading of the monotonic clock. An entry goes as soon as the
 	 * registry names its index, and lapses on its own when it never does - see
 	 * {@link #CLAIM_AHEAD_GRACE}. Only touched on the executor thread.
 	 */
 	private final Map<String, Long> claimedAhead = new HashMap<>();
+
+	private final LeaseClock clock;
+
+	/**
+	 * When this node first read each entry of the table, which decides when
+	 * an entry of another node has lapsed.
+	 */
+	private final LeaseSightings sightings;
+
+	/**
+	 * The nodes whose candidate entries show a wall clock that runs ahead of
+	 * the clock of this node, so the warning about one is logged once and
+	 * not every round. Only touched on the executor thread.
+	 */
+	private final HashSet<String> skewedNodes = new HashSet<>();
+
+	/**
+	 * The readings of the wall clock and the monotonic clock of the last
+	 * round, to find a step of the wall clock. Only touched on the executor
+	 * thread.
+	 */
+	private long lastRoundWallMillis;
+	private long lastRoundNanos;
+	private boolean hasLastRound;
 
 	private final ScheduledExecutorService executor;
 
@@ -252,7 +282,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 	/**
 	 * Guards {@link #held}, {@link #draining}, {@link #drainFlushes},
-	 * {@link #heldUntil} and {@link #shutDown}, and every call to the
+	 * {@link #heldUntilNanos} and {@link #shutDown}, and every call to the
 	 * listener. The rounds, {@link #checkLease()} and the shutdown flush all
 	 * change them. A round holds the lock while it
 	 * builds and while it applies a table, never while it waits on the
@@ -302,12 +332,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	private boolean shutDown;
 
 	/**
-	 * When the claims this node holds lapse, according to its own clock.
-	 * Failing to renew before {@link #revokeMarginMillis} ahead of this point
-	 * means holding them is no longer certain, and they are given up. Only
-	 * touched while {@link #stateLock} is held.
+	 * When the claims this node holds lapse, as a reading of the monotonic
+	 * clock. It is one lease after the last round that renewed them read the
+	 * table, a moment before the storage took the renewal, so no other node
+	 * can find the claims lapsed before this point. Failing to renew before
+	 * {@link #revokeMarginMillis} ahead of this point means holding them is
+	 * no longer certain, and they are given up. Only touched while
+	 * {@link #stateLock} is held.
 	 */
-	private long heldUntil;
+	private long heldUntilNanos;
 
 	/**
 	 * How many claims the last applied round found that name this node under
@@ -371,6 +404,35 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		ObjLongConsumer<String> writeLoadSeed,
 		Function<String, ? extends CompletableFuture<?>> handoverFlush
 	) {
+		this(
+			storage,
+			node,
+			address,
+			leaseDuration,
+			indexNames,
+			writeLoad,
+			writeLoadSeed,
+			handoverFlush,
+			LeaseClock.SYSTEM
+		);
+	}
+
+	/**
+	 * @param clock
+	 *   the clocks that time the claims. Tests give each node clocks of its
+	 *   own, to run nodes whose clocks do not agree in one process
+	 */
+	ObjectStorageIndexerOwnership(
+		ObjectStorage storage,
+		String node,
+		Optional<String> address,
+		Duration leaseDuration,
+		Supplier<? extends SetIterable<String>> indexNames,
+		ToDoubleFunction<String> writeLoad,
+		ObjLongConsumer<String> writeLoadSeed,
+		Function<String, ? extends CompletableFuture<?>> handoverFlush,
+		LeaseClock clock
+	) {
 		this.client = storage.client();
 		this.bucket = storage.bucket();
 		this.tableKey = storage.rootObject(TABLE_NAME);
@@ -383,6 +445,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		this.writeLoad = writeLoad;
 		this.writeLoadSeed = writeLoadSeed;
 		this.handoverFlush = handoverFlush;
+		this.clock = clock;
+		this.sightings = new LeaseSightings(leaseDuration);
 
 		this.revokeMarginMillis = Math.max(1, leaseDuration.toMillis() / 10);
 		this.tableCallTimeout = leaseDuration.dividedBy(3);
@@ -470,7 +534,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 * loses that race from doing damage.
 		 */
 		var flushDone = false;
-		var deadline = System.nanoTime() + leaseDuration.toNanos();
+		var deadline = clock.monotonicNanos() + leaseDuration.toNanos();
 		var renewEvery = Math.max(1, leaseDuration.toMillis() / 3);
 		try {
 			while(true) {
@@ -478,7 +542,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					renewForShutdown(flushingOnShutdown);
 				}
 
-				var left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+				var left = TimeUnit.NANOSECONDS.toMillis(deadline - clock.monotonicNanos());
 				if(left <= 0) {
 					throw new TimeoutException("Flush still running after " + leaseDuration);
 				}
@@ -632,7 +696,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 * cached table rather than by coordinating.
 		 */
 		var cached = cachedTable();
-		if(cached != null && hasLiveClaimByOther(cached, index, System.currentTimeMillis())) {
+		if(
+			cached != null
+				&& hasLiveClaimByOther(cached, index, clock.wallMillis(), clock.monotonicNanos())
+		) {
 			return false;
 		}
 
@@ -684,9 +751,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			return false;
 		}
 
-		var now = System.currentTimeMillis();
+		var now = clock.wallMillis();
+		var nowNanos = clock.monotonicNanos();
 		for(var claim : table.getClaimsList()) {
-			if(index.equals(claim.getIndex()) && claim.getExpiresAt() > now) {
+			if(index.equals(claim.getIndex()) && !sightings.isLapsed(claim, now, nowNanos)) {
 				return true;
 			}
 		}
@@ -701,14 +769,15 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			return Optional.empty();
 		}
 
-		var now = System.currentTimeMillis();
+		var now = clock.wallMillis();
+		var nowNanos = clock.monotonicNanos();
 
 		for(var claim : table.getClaimsList()) {
 			if(!index.equals(claim.getIndex())) {
 				continue;
 			}
 
-			if(claim.getExpiresAt() <= now) {
+			if(sightings.isLapsed(claim, now, nowNanos)) {
 				// Free to be taken, so it is answered like an index nothing holds
 				break;
 			}
@@ -734,7 +803,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		var candidates = new ArrayList<IndexerLeadership.Candidate>();
 		for(var candidate : table.getCandidatesList()) {
 			if(
-				candidate.getExpiresAt() > now
+				!sightings.isLapsed(candidate, now, nowNanos)
 					&& candidate.hasAddress()
 					&& !node.equals(candidate.getNode())
 			) {
@@ -758,11 +827,12 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			return Optional.empty();
 		}
 
-		var now = System.currentTimeMillis();
+		var now = clock.wallMillis();
+		var nowNanos = clock.monotonicNanos();
 
 		var candidates = new ArrayList<Candidate>();
 		for(var candidate : table.getCandidatesList()) {
-			if(candidate.getExpiresAt() <= now) {
+			if(sightings.isLapsed(candidate, now, nowNanos)) {
 				continue;
 			}
 
@@ -775,7 +845,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 
 		var claims = new ArrayList<Claim>();
 		for(var claim : table.getClaimsList()) {
-			if(claim.getExpiresAt() <= now) {
+			if(sightings.isLapsed(claim, now, nowNanos)) {
 				// Free to be taken, answered the way an unclaimed index is
 				continue;
 			}
@@ -805,7 +875,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			return;
 		}
 
-		var roundStarted = System.nanoTime();
+		var roundStarted = clock.monotonicNanos();
 
 		try {
 			coordinate();
@@ -838,7 +908,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		 * round slow enough to push the next one past the expiry is exactly the
 		 * one whose claims would lapse with the node still there.
 		 */
-		var elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - roundStarted);
+		var elapsed = TimeUnit.NANOSECONDS.toMillis(clock.monotonicNanos() - roundStarted);
 		var delay = Math.max(0, third + jitter - elapsed);
 
 		try {
@@ -861,7 +931,12 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			var current = fetched == null
 				? IndexerLeadership.getDefaultInstance()
 				: fetched.table();
-			var now = System.currentTimeMillis();
+			var now = clock.wallMillis();
+			var nowNanos = clock.monotonicNanos();
+
+			if(attempt == 0) {
+				noticeSkew(current, now, nowNanos);
+			}
 
 			Rebuilt rebuilt;
 			synchronized(stateLock) {
@@ -874,13 +949,13 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					return;
 				}
 
-				rebuilt = rebuild(current, now, null);
+				rebuilt = rebuild(current, now, nowNanos, null);
 			}
 
 			var etag = putTable(rebuilt.table(), fetched == null ? null : fetched.eTag());
 			if(etag != null) {
 				synchronized(stateLock) {
-					apply(now, rebuilt);
+					apply(nowNanos, rebuilt);
 				}
 
 				return;
@@ -926,9 +1001,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			var current = fetched == null
 				? IndexerLeadership.getDefaultInstance()
 				: fetched.table();
-			var now = System.currentTimeMillis();
+			var now = clock.wallMillis();
+			var nowNanos = clock.monotonicNanos();
 
-			if(hasLiveClaimByOther(current, index, now)) {
+			if(hasLiveClaimByOther(current, index, now, nowNanos)) {
 				return false;
 			}
 
@@ -939,7 +1015,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					return false;
 				}
 
-				rebuilt = rebuild(current, now, index);
+				rebuilt = rebuild(current, now, nowNanos, index);
 			}
 
 			String etag;
@@ -962,10 +1038,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				 * that is about to put it there, and only the next round can
 				 * tell.
 				 */
-				claimedAhead.put(index, now + CLAIM_AHEAD_GRACE.toMillis());
+				claimedAhead.put(index, nowNanos + CLAIM_AHEAD_GRACE.toNanos());
 
 				synchronized(stateLock) {
-					apply(now, rebuilt);
+					apply(nowNanos, rebuilt);
 					return held.contains(index);
 				}
 			}
@@ -978,12 +1054,17 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * Whether another node, or another process under this node name, holds a
 	 * live claim on the index, which is what makes it not free.
 	 */
-	private boolean hasLiveClaimByOther(IndexerLeadership table, String index, long now) {
+	private boolean hasLiveClaimByOther(
+		IndexerLeadership table,
+		String index,
+		long now,
+		long nowNanos
+	) {
 		for(var claim : table.getClaimsList()) {
 			if(
 				index.equals(claim.getIndex())
 					&& !isOwn(claim)
-					&& claim.getExpiresAt() > now
+					&& !sightings.isLapsed(claim, now, nowNanos)
 			) {
 				return true;
 			}
@@ -1016,12 +1097,22 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * Rewrite the table for this round: this node's entries renewed, lapsed
 	 * entries dropped, and the indexes divided up.
 	 *
+	 * @param now
+	 *   the wall clock, which gives the expiry of the renewed entries
+	 * @param nowNanos
+	 *   the monotonic clock, which decides which entries of other nodes
+	 *   have lapsed
 	 * @param forcedClaim
 	 *   an index to take regardless of fair share, because a write for it is
 	 *   waiting, or {@code null} for a normal round. The caller has already
 	 *   checked that nothing holds it alive.
 	 */
-	private Rebuilt rebuild(IndexerLeadership current, long now, String forcedClaim) {
+	private Rebuilt rebuild(
+		IndexerLeadership current,
+		long now,
+		long nowNanos,
+		String forcedClaim
+	) {
 		var names = indexNames.get();
 		var expiresAt = now + leaseDuration.toMillis();
 
@@ -1040,7 +1131,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		for(var candidate : current.getCandidatesList()) {
 			if(node.equals(candidate.getNode())) {
 				previousSelf = candidate;
-			} else if(candidate.getExpiresAt() > now) {
+			} else if(!sightings.isLapsed(candidate, now, nowNanos)) {
 				otherCandidates.add(candidate);
 				candidatesByNode.put(candidate.getNode(), candidate);
 			}
@@ -1077,7 +1168,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			if(isOwn(claim)) {
 				mine.add(claim.getIndex());
 				myClaims.put(claim.getIndex(), claim);
-			} else if(claim.getExpiresAt() > now && claimedByOthers.add(claim.getIndex())) {
+			} else if(
+				!sightings.isLapsed(claim, now, nowNanos)
+					&& claimedByOthers.add(claim.getIndex())
+			) {
 				othersClaims.add(claim);
 				claimsPerNode.merge(claim.getNode(), 1, Integer::sum);
 				loadPerNode.merge(claim.getNode(), claim.getLoadBucket(), Integer::sum);
@@ -1260,7 +1354,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			 * working from a shorter list the second time.
 			 */
 			claimedAhead.entrySet().removeIf(
-				ahead -> names.contains(ahead.getKey()) || ahead.getValue() <= now
+				ahead -> names.contains(ahead.getKey()) || ahead.getValue() - nowNanos <= 0
 			);
 
 			mine.removeIf(name -> {
@@ -1585,14 +1679,19 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	/**
 	 * Take a written round into effect: what it holds, for how long, and the
 	 * listener told about every index that changed hands.
+	 *
+	 * @param roundNanos
+	 *   the monotonic clock when the round built the table, before it wrote
+	 *   it. The renewed claims lapse one lease after this point
 	 */
-	private void apply(long now, Rebuilt rebuilt) {
+	private void apply(long roundNanos, Rebuilt rebuilt) {
 		if(shutDown) {
 			applyAfterShutdown(rebuilt);
 			return;
 		}
 
-		if(System.currentTimeMillis() >= now + leaseDuration.toMillis() - revokeMarginMillis) {
+		var heldUntil = roundNanos + leaseDuration.toNanos();
+		if(clock.monotonicNanos() - (heldUntil - revokeMarginNanos()) >= 0) {
 			/*
 			 * The table write took so long that the claims it renewed are
 			 * about to lapse. checkLease would give them up at once, so they
@@ -1602,8 +1701,8 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			return;
 		}
 
-		this.heldUntil = now + leaseDuration.toMillis();
-		this.tableCache = new CachedTable(rebuilt.table(), System.nanoTime());
+		this.heldUntilNanos = heldUntil;
+		this.tableCache = new CachedTable(rebuilt.table(), clock.monotonicNanos());
 
 		var otherSession = 0;
 		for(var claim : rebuilt.table().getClaimsList()) {
@@ -1843,6 +1942,78 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		}
 	}
 
+	private long revokeMarginNanos() {
+		return TimeUnit.MILLISECONDS.toNanos(revokeMarginMillis);
+	}
+
+	/**
+	 * Log a warning when the wall clocks disagree. The claims do not depend
+	 * on the wall clocks, but a node of a version that times the claims on
+	 * the wall clock can take a claim too early or keep it too long. Two
+	 * signs are checked:
+	 *
+	 * <ul>
+	 *   <li>The wall clock of this node moved by more or less than the
+	 *   monotonic clock since the last round: the wall clock stepped.</li>
+	 *   <li>A candidate entry of another node expires more than one lease
+	 *   ahead of the wall clock of this node. A node writes its entry with an
+	 *   expiry one lease after its own wall clock, so the wall clock of that
+	 *   node runs ahead of the wall clock of this node.</li>
+	 * </ul>
+	 *
+	 * <p>A difference of up to {@link #revokeMarginMillis} is not reported.
+	 * Only the node with the slower wall clock of a pair sees the second
+	 * sign. Called on the executor thread.
+	 */
+	private void noticeSkew(IndexerLeadership table, long now, long nowNanos) {
+		if(hasLastRound) {
+			var wallElapsed = now - lastRoundWallMillis;
+			var elapsed = TimeUnit.NANOSECONDS.toMillis(nowNanos - lastRoundNanos);
+			var step = wallElapsed - elapsed;
+			if(Math.abs(step) > revokeMarginMillis) {
+				logger.atWarn()
+					.addKeyValue("node", node)
+					.addKeyValue("stepMillis", step)
+					.log(
+						"The wall clock of this node stepped by " + step + " ms since the"
+							+ " last leadership round. The claims are timed on the monotonic"
+							+ " clock, but nodes of older versions read the expiry of the"
+							+ " claims with their wall clocks"
+					);
+			}
+		}
+
+		lastRoundWallMillis = now;
+		lastRoundNanos = nowNanos;
+		hasLastRound = true;
+
+		var newest = now + leaseDuration.toMillis();
+		for(var candidate : table.getCandidatesList()) {
+			if(node.equals(candidate.getNode())) {
+				continue;
+			}
+
+			var ahead = candidate.getExpiresAt() - newest;
+			if(ahead <= revokeMarginMillis) {
+				skewedNodes.remove(candidate.getNode());
+				continue;
+			}
+
+			if(skewedNodes.add(candidate.getNode())) {
+				logger.atWarn()
+					.addKeyValue("node", node)
+					.addKeyValue("otherNode", candidate.getNode())
+					.addKeyValue("aheadMillis", ahead)
+					.log(
+						"The wall clock of another candidate runs at least " + ahead
+							+ " ms ahead of the wall clock of this node. The claims are timed"
+							+ " on the monotonic clock, but nodes of older versions read the"
+							+ " expiry of the claims with their wall clocks"
+					);
+			}
+		}
+	}
+
 	/**
 	 * Give every index up when the claims are about to lapse without a
 	 * renewal. Called after every round, and by {@link #leaseWatch} on a
@@ -1854,7 +2025,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 			synchronized(stateLock) {
 				if(
 					(!held.isEmpty() || !draining.isEmpty())
-						&& System.currentTimeMillis() >= heldUntil - revokeMarginMillis
+						&& clock.monotonicNanos() - (heldUntilNanos - revokeMarginNanos()) >= 0
 				) {
 					lostAll("the claims could not be renewed before they lapse");
 				}
@@ -1909,8 +2080,9 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 	 * Renew the claims of the indexes the shutdown flush pushes, so that no
 	 * other node takes one of them while its flush still runs.
 	 *
-	 * <p>Only a claim of this process that has not lapsed is renewed. A
-	 * lapsed claim is free for other nodes to take, and renewing it could
+	 * <p>Only claims of this process that have not lapsed are renewed, timed
+	 * on the monotonic clock from the last renewal that this process applied.
+	 * A lapsed claim is free for other nodes to take, and renewing it could
 	 * take an index back from a successor that already writes it. The
 	 * candidate entry of this node is not renewed, so other nodes stop
 	 * sending writes for free indexes here. The other entries of the table
@@ -1934,16 +2106,22 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					return;
 				}
 
-				var now = System.currentTimeMillis();
+				var now = clock.wallMillis();
+				var nowNanos = clock.monotonicNanos();
+				boolean live;
+				synchronized(stateLock) {
+					live = nowNanos - (heldUntilNanos - revokeMarginNanos()) < 0;
+				}
+
+				if(!live) {
+					return;
+				}
+
 				var builder = fetched.table().toBuilder().clearClaims();
 				var renewed = false;
 
 				for(var claim : fetched.table().getClaimsList()) {
-					if(
-						isOwn(claim)
-							&& claim.getExpiresAt() > now
-							&& indexes.contains(claim.getIndex())
-					) {
+					if(isOwn(claim) && indexes.contains(claim.getIndex())) {
 						builder.addClaims(
 							claim.toBuilder().setExpiresAt(now + leaseDuration.toMillis())
 						);
@@ -1958,6 +2136,10 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				}
 
 				if(putTable(builder.build(), fetched.eTag()) != null) {
+					synchronized(stateLock) {
+						heldUntilNanos = nowNanos + leaseDuration.toNanos();
+					}
+
 					return;
 				}
 			}
@@ -2054,7 +2236,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 		var cached = tableCache;
 		if(
 			cached != null
-				&& System.nanoTime() - cached.fetchedAtNanos() < TABLE_CACHE_TTL.toNanos()
+				&& clock.monotonicNanos() - cached.fetchedAtNanos() < TABLE_CACHE_TTL.toNanos()
 		) {
 			return cached.table();
 		}
@@ -2070,7 +2252,7 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				.log("Could not read indexer leadership; " + e.getMessage());
 		}
 
-		this.tableCache = new CachedTable(table, System.nanoTime());
+		this.tableCache = new CachedTable(table, clock.monotonicNanos());
 		return table;
 	}
 
@@ -2084,8 +2266,11 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 					.build()
 			)
 		) {
+			var table = IndexerLeadership.parseFrom(response.readAllBytes());
+			sightings.record(table, clock.monotonicNanos());
+
 			return new FetchedTable(
-				IndexerLeadership.parseFrom(response.readAllBytes()),
+				table,
 				ObjectStorageSync.quoteETag(response.response().eTag())
 			);
 		} catch(S3Exception e) {

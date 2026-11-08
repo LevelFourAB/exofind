@@ -257,6 +257,19 @@ An unassigned index does not wait for a coordination round. The first candidate 
 
 The leadership table ensures that at most one node expends effort writing to each index, and informs other nodes where to forward writes. The table does not guarantee data safety. For example, clock drift or a paused process can cause a stale node to attempt writes after its claim has lapsed. Conditional manifest writes and epoch scoping prevent stale writers from corrupting data. The leadership table maintains system liveness, while conditional writes provide safety.
 
+## Claims are timed without the wall clock
+
+Each entry in the table carries an expiry: the wall clock time of the node that wrote it, plus one claim duration. The wall clocks of two nodes do not always agree, and the wall clock of one node can step forward or back. If a node compared the expiry of another node with its own wall clock, a node whose clock runs ahead could take a claim that its holder renews every round. The holder then loses the index and the documents it acknowledged and did not push yet. A forward step on the holder would make it give up claims that are still valid, and a backward step would let it write after the other nodes see its claim as lapsed.
+
+Each node therefore times claims with its monotonic clock, which measures elapsed time and does not step:
+
+- The holder measures its claims from the moment the round that renewed them read the table. That moment comes before the storage takes the renewal, so no other node can see the claims lapse earlier.
+- Another node finds an entry lapsed only when it has read the same entry, with the same expiry, for one full claim duration on its own monotonic clock. A renewal writes a new expiry, so an entry whose holder renews it never stays the same for that long.
+
+The holder gives its claims up one-tenth of the claim duration before they lapse, and the other nodes start counting only after they read the renewal. The difference is the margin that keeps the holder and its successor from writing at the same time. The expiry in the entry still counts: a node also waits until its own wall clock passes the expiry. That condition can make a node wait longer, but never shorter. As a result, a candidate that has just started, or that reads an entry for the first time, waits one claim duration before it takes the claim of a crashed node. A failover takes between one claim duration and one claim duration plus two rounds after the last renewal.
+
+The table has no new fields for this, so nodes of older versions read and write it as before. A node of an older version still compares expiries with its wall clock, and clock skew can make it take a claim early. A node logs a warning when its wall clock steps between two rounds. It also logs a warning when the entry of another candidate expires more than 1.1 claim durations after the current time on its own wall clock. Only a wall clock that runs ahead writes such an entry, so only the node whose clock runs behind sees this sign.
+
 ## Related
 
 - [What a write guarantees](write-guarantees.md) - What a client can assume after a write returns, and what a failover does to it.
