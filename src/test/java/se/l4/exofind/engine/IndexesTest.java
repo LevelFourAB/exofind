@@ -500,6 +500,77 @@ public class IndexesTest {
 	}
 
 	/**
+	 * A manual promote waits for a write that is inside its change also when
+	 * the cache does not hold the instance of the write. That is the case
+	 * while a write opens the generation, and after the cache evicts the
+	 * instance under a write that runs.
+	 */
+	@Test
+	public void testAManualPromoteWaitsForAWriteOnAnInstanceTheCacheDoesNotHold()
+		throws Exception {
+		var capped = newNode(
+			storageDirectory.resolve("capped"),
+			registry(),
+			OptionalInt.of(1)
+		);
+
+		try {
+			// Given
+			capped.create("books", keyed());
+			capped.createGeneration("books@2", keyed());
+
+			var inside = new CountDownLatch(1);
+			var release = new CountDownLatch(1);
+			var wroteTo = new CompletableFuture<String>();
+			var writer = new Thread(() -> wroteTo.complete(capped.write("books", index -> {
+				inside.countDown();
+				try {
+					release.await();
+					index.addDocument(new Document(new Document.Value("id", "1")));
+					return index.getId();
+				} catch(IOException e) {
+					throw new UncheckedIOException(e);
+				} catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return null;
+				}
+			})));
+			writer.start();
+			assertThat(inside.await(10, TimeUnit.SECONDS), is(true));
+			evict(capped, "books@1");
+
+			// When
+			var promoted = new CompletableFuture<Void>();
+			var promoter = new Thread(() -> {
+				capped.promote("books@2");
+				promoted.complete(null);
+			});
+			promoter.start();
+
+			var deadline = System.currentTimeMillis() + 5000;
+			while(!promoted.isDone() && promoter.getState() != Thread.State.WAITING
+				&& System.currentTimeMillis() < deadline) {
+				Thread.sleep(10);
+			}
+			var doneWhileTheWriteRan = promoted.isDone();
+
+			release.countDown();
+			writer.join(10_000);
+			promoter.join(10_000);
+
+			// Then
+			assertThat(
+				"the promote finished while a write was inside its change",
+				doneWhileTheWriteRan,
+				is(false)
+			);
+			assertThat(wroteTo.get(10, TimeUnit.SECONDS), is("books@1"));
+		} finally {
+			capped.close();
+		}
+	}
+
+	/**
 	 * Wait for a thread to park, which is where a write waits at the gate a
 	 * hold has taken.
 	 */

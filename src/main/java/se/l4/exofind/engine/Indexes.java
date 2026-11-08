@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.lucene.index.SegmentInfos;
 import org.eclipse.collections.api.list.ListIterable;
@@ -228,6 +229,25 @@ public class Indexes implements RegistryPoller.Listener {
 	 * index is wanted, which is reason enough to keep its files.
 	 */
 	private final ConcurrentHashMap<String, ReentrantLock> nameLocks;
+
+	/**
+	 * One lock per index name, between the writes to the index and a manual
+	 * promote of it. A write takes the read side inside the write gate of its
+	 * generation, around the check that the name still answers from that
+	 * generation and the change. A promote takes the write side around the
+	 * registry write.
+	 *
+	 * <p>The {@link Index#holdWrites() hold} of a promote is on an instance
+	 * in the cache. A write can be inside an instance the cache does not
+	 * hold: one it is still opening, or one the cache evicted while the write
+	 * ran. This lock makes the promote wait for such a write too.
+	 *
+	 * <p>Taken after the write gate, never before it. A reindex job holds the
+	 * gate of its source and then promotes, and a write that waited for this
+	 * lock outside the gate would wait for the job while the job waits for
+	 * the gate.
+	 */
+	private final ConcurrentHashMap<String, ReentrantReadWriteLock> promoteLocks;
 
 	/**
 	 * Runs the refresh passes {@link RegistryPoller} hands over and the disk
@@ -636,6 +656,7 @@ public class Indexes implements RegistryPoller.Listener {
 		this.lastManifestChecks = new ConcurrentHashMap<>();
 		this.lifecycleLock = new ReentrantLock();
 		this.nameLocks = new ConcurrentHashMap<>();
+		this.promoteLocks = new ConcurrentHashMap<>();
 		this.closeGracePeriod = closeGracePeriod;
 		this.retiring = new ConcurrentHashMap<>();
 		this.closeFinished = new CompletableFuture<>();
@@ -2707,14 +2728,34 @@ public class Indexes implements RegistryPoller.Listener {
 		for(var attempt = 0; attempt < WRITE_RESOLVE_ATTEMPTS; attempt++) {
 			var index = getOrThrow(name);
 			try(var entry = index.enterWrite()) {
-				if(resolves(name, index)) {
-					return action.apply(index);
+				var promoteLock = promoteLockOf(name).readLock();
+				promoteLock.lock();
+				try {
+					if(resolves(name, index)) {
+						return action.apply(index);
+					}
+				} finally {
+					promoteLock.unlock();
 				}
 			}
 		}
 
 		throw new ValidationException(
 			LIVE_GENERATION_UNSETTLED.toMessage(ObjectLocation.root(), "name", name)
+		);
+	}
+
+	/**
+	 * Get the lock between the writes to an index and a manual promote of it,
+	 * see {@link #promoteLocks}.
+	 *
+	 * @param name
+	 *   the index, or one generation of it
+	 */
+	private ReentrantReadWriteLock promoteLockOf(String name) {
+		return promoteLocks.computeIfAbsent(
+			IndexName.parse(name).index(),
+			n -> new ReentrantReadWriteLock()
 		);
 	}
 
@@ -3393,9 +3434,11 @@ public class Indexes implements RegistryPoller.Listener {
 	 * once and on every other within its refresh interval.
 	 *
 	 * <p>When this node holds the replaced generation open, the promote is
-	 * made under a {@link Index#holdWrites() hold} on it. Writes on this node
-	 * that are already inside that generation finish before the switch.
-	 * Writes that start during the promote wait and then go to the promoted
+	 * made under a {@link Index#holdWrites() hold} on it. The promote also
+	 * waits for the writes on this node that are inside an instance the cache
+	 * does not hold, see {@link #promoteLocks}. Writes on this node that are
+	 * already inside the replaced generation finish before the switch. Writes
+	 * that start during the promote wait and then go to the promoted
 	 * generation.
 	 *
 	 * @param name
@@ -3417,7 +3460,13 @@ public class Indexes implements RegistryPoller.Listener {
 		}
 
 		try(var hold = holdWritesToLive(generation.index())) {
-			return registry.promote(generation.index(), generation.generation());
+			var promoteLock = promoteLockOf(name).writeLock();
+			promoteLock.lock();
+			try {
+				return registry.promote(generation.index(), generation.generation());
+			} finally {
+				promoteLock.unlock();
+			}
 		}
 	}
 
@@ -3442,8 +3491,8 @@ public class Indexes implements RegistryPoller.Listener {
 		 * Not opened here. An open can wait for a hold on an instance that
 		 * was evicted, and that hold can be the one the caller of the promote
 		 * keeps. A promote is also how an operator moves an index off a
-		 * generation that can not be opened. The cost is that a write which
-		 * is still opening the generation is not held.
+		 * generation that can not be opened. A write that is still opening
+		 * the generation is held by the promote lock instead.
 		 */
 		var open = indexes.asMap().get(live.toString());
 		return open == null ? () -> {} : open.holdWrites();
