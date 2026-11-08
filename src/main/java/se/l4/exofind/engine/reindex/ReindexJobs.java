@@ -742,6 +742,48 @@ public class ReindexJobs {
 	}
 
 	/**
+	 * Close a job that no node carries as done when its promote landed, before
+	 * a promote of another generation moves the index away from its target.
+	 * The target can only become live through its job while the job is
+	 * unfinished, so a live target means that the job promoted it and stopped
+	 * before its record said so. Left open, the record makes a resume promote
+	 * the target again over the promote the operator asked for.
+	 *
+	 * @param version
+	 *   version of the record that {@code job} was read from
+	 * @throws ReindexStorageException
+	 *   if the record could not be written
+	 */
+	private void closeLandedPromote(ReindexJob job, String version) {
+		if(!job.target().equals(liveOf(job.index()))) {
+			return;
+		}
+
+		var done = job.withPhase(ReindexPhase.DONE)
+			.withBacklog(0)
+			.written(node, Instant.now());
+
+		String written;
+		try {
+			written = storage.write(job.index(), done.toStore(), version);
+		} catch(IOException e) {
+			throw new ReindexStorageException(e);
+		}
+
+		if(written == null) {
+			// Another node wrote the record first, and its write decides
+			return;
+		}
+
+		logger.atInfo()
+			.addKeyValue("index", job.index())
+			.addKeyValue("target", job.targetName())
+			.log("Closed a reindex whose promote landed before its record said so");
+
+		endTrackingQuietly(job);
+	}
+
+	/**
 	 * Whether the job this node carries for an index reads or fills the
 	 * deleted index or generation.
 	 */
@@ -939,6 +981,9 @@ public class ReindexJobs {
 	 *   promote proceeds
 	 * @throws ReindexTargetBusyException
 	 *   if the job filling the generation is not ready yet
+	 * @throws ReindexStorageException
+	 *   if the record of the job could not be read, or a record that must say
+	 *   the job is done could not be written
 	 */
 	public boolean promoteThroughJob(String name) {
 		var parsed = IndexName.parse(name);
@@ -954,13 +999,26 @@ public class ReindexJobs {
 			 * exists to keep a partial target from going live, and it cannot
 			 * be finished here before it has been resumed.
 			 */
-			var recorded = get(parsed.index()).orElse(null);
+			ReindexJobStorage.Stored stored;
+			try {
+				stored = storage.read(parsed.index()).orElse(null);
+			} catch(IOException e) {
+				throw new ReindexStorageException(e);
+			}
+
+			var recorded = stored == null
+				? null
+				: ReindexJob.fromStore(stored.record()).orElse(null);
 			if(
 				recorded != null
 					&& !recorded.phase().isFinished()
 					&& recorded.target().equals(parsed.generation())
 			) {
 				throw new ReindexTargetBusyException(name);
+			}
+
+			if(recorded != null && recorded.phase() == ReindexPhase.PROMOTING) {
+				closeLandedPromote(recorded, stored.version());
 			}
 
 			return false;

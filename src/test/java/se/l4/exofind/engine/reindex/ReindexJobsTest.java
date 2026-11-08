@@ -693,6 +693,50 @@ public class ReindexJobsTest {
 	}
 
 	/**
+	 * A job that promoted its target and stopped before its record said so
+	 * is done. An operator who rolled the index back to the source meanwhile
+	 * decided where it answers from, and a resume must not promote the
+	 * target over that again.
+	 */
+	@Test
+	public void aResumeAfterTheTargetWasPromotedAndRolledBackKeepsTheRollback()
+		throws Exception {
+		// Given
+		catalogue();
+		var target = indexes.createGeneration("catalogue@2", definition().build());
+		target.addDocument(doc("1", "Blueberry jam", "preserves"));
+		target.commit();
+
+		var registered = registry.get("catalogue").orElseThrow();
+		var now = Instant.now();
+		storage.write(
+			"catalogue",
+			new ReindexJob(
+				"job-1", "catalogue", "2", "1",
+				ReindexPhase.PROMOTING,
+				"3", 3, 3, 0, null, false, "tester", "node-b", now, now, null,
+				registered.generation("1").orElseThrow().createdAt(),
+				registered.generation("2").orElseThrow().createdAt()
+			).toStore(),
+			null
+		);
+
+		// The job promoted its target and stopped
+		registry.promote("catalogue", "2");
+
+		// And the operator rolled back through the promote endpoint
+		assertThat(jobs.promoteThroughJob("catalogue@1"), is(false));
+		indexes.promote("catalogue@1");
+
+		// When
+		jobs.onStart(null);
+		awaitFinished("catalogue");
+
+		// Then
+		assertThat(registry.get("catalogue").orElseThrow().live(), is("1"));
+	}
+
+	/**
 	 * A job whose target is gone cannot be resumed and is closed as failed.
 	 * Closing it must also stop the source recording changes for it, or the
 	 * log grows with every write until some later job ends it.
