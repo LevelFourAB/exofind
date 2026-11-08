@@ -4,14 +4,28 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.concurrent.Executor;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import se.l4.exofind.engine.Indexes;
+import se.l4.exofind.engine.NodeState;
+import se.l4.exofind.engine.index.schema.IndexDef;
+import se.l4.exofind.engine.index.state.NoopRemoteSyncProvider;
+import se.l4.exofind.engine.index.state.NoopSyncProvider;
+import se.l4.exofind.engine.index.state.RecordingIndexRemovals;
+import se.l4.exofind.engine.index.state.StateSyncProvider;
+import se.l4.exofind.engine.storage.StorageMode;
 
 /**
  * How one poller serves several listeners: the registry is read once for all of
@@ -140,5 +154,111 @@ public class RegistryPollerTest {
 		poller.poll();
 
 		assertThat(listener.polls, contains(true, false, true));
+	}
+
+	@TempDir
+	Path storageDirectory;
+
+	private Indexes node(IndexRegistry registry, StateSyncProvider syncProvider) throws IOException {
+		var state = new NodeState(true);
+		state.updateOwnership(true);
+
+		return new Indexes(
+			state,
+			syncProvider,
+			registry,
+			new RegistryHints(registry, StorageMode.OBJECT),
+			new RecordingIndexRemovals(),
+			storageDirectory,
+			OptionalInt.empty(),
+			Duration.ofMinutes(5),
+			Duration.ofMinutes(10),
+			4,
+			Duration.ofMillis(100),
+			0,
+			Duration.ZERO,
+			Optional.empty(),
+			Optional.empty(),
+			Duration.ofHours(24),
+			Duration.ofHours(168),
+			Duration.ofHours(1)
+		);
+	}
+
+	/**
+	 * A listener that hands each poll to the node and runs it on the calling
+	 * thread, so the test needs no waiting.
+	 */
+	private static RegistryPoller.Listener onCallingThread(Indexes node) {
+		return new RegistryPoller.Listener() {
+			@Override
+			public Optional<Duration> pollInterval() {
+				return Optional.of(Duration.ZERO);
+			}
+
+			@Override
+			public Executor executor() {
+				return Runnable::run;
+			}
+
+			@Override
+			public void onRegistryPolled(boolean changed) {
+				node.onRegistryPolled(changed);
+			}
+		};
+	}
+
+	/**
+	 * Other parts of a node read the registry too: the hint flush, a read
+	 * that waits for freshness, a lookup of a name the node does not know.
+	 * When one of them reads a delete before the poller does, the node must
+	 * still remove its copy of the deleted index.
+	 */
+	@Test
+	public void testANodeRemovesTheCopyOfAnIndexDeletedWhenAnotherReadTookTheChangeFirst()
+		throws IOException
+	{
+		// Given node S holding copies of books and films, which copy a remote
+		var seeder = node(new IndexRegistry(storage, Duration.ofMinutes(5)), new NoopSyncProvider());
+		try {
+			seeder.create("books", IndexDef.getDefaultInstance());
+			seeder.create("films", IndexDef.getDefaultInstance());
+		} finally {
+			seeder.close();
+		}
+
+		var nodeRegistry = new IndexRegistry(storage, Duration.ofMinutes(5));
+		var node = node(nodeRegistry, new NoopRemoteSyncProvider());
+		try {
+			var poller = new RegistryPoller(nodeRegistry, List.of(onCallingThread(node)));
+			poller.poll();
+
+			var books = storageDirectory.resolve("indexes").resolve("books@1");
+			assertThat(Files.isDirectory(books), is(true));
+
+			// And another node deletes books
+			var other = new IndexRegistry(storage, Duration.ofMinutes(5));
+			other.refresh();
+			other.remove("books");
+
+			// And another read on S takes the change before the poller does
+			nodeRegistry.refresh();
+
+			// When the poller polls
+			poller.poll();
+
+			// Then S removes its copy of books
+			assertThat(
+				"copy of the deleted index kept",
+				Files.exists(books),
+				is(false)
+			);
+			assertThat(
+				Files.isDirectory(storageDirectory.resolve("indexes").resolve("films@1")),
+				is(true)
+			);
+		} finally {
+			node.close();
+		}
 	}
 }

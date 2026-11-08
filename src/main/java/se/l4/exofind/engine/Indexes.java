@@ -343,6 +343,14 @@ public class Indexes implements RegistryPoller.Listener {
 	private boolean sweptUnregistered;
 
 	/**
+	 * The registry version that the last check of the local copies read. Many
+	 * paths other than the poller read the registry, so a poll can find the
+	 * registry already at a new version. A version that differs from this
+	 * one starts a new check, whatever the poll reports.
+	 */
+	private String sweptRegistryVersion;
+
+	/**
 	 * Whether this node has read a registry that lists at least one index since
 	 * it started. Until it has, a registry that lists none can be a registry
 	 * that was lost, and the copies this node holds are kept.
@@ -1490,16 +1498,22 @@ public class Indexes implements RegistryPoller.Listener {
 	 *
 	 * @param registryChanged
 	 *   whether the last read moved this node's copy of the registry. Copies
-	 *   of indexes the registry no longer holds are looked for only then, and
-	 *   once when the node starts.
+	 *   of indexes the registry no longer holds are looked for only then,
+	 *   once when the node starts, and when the copy of the registry is at a
+	 *   version that the last look did not read.
 	 */
 	void refresh(boolean registryChanged) {
 		refreshing = true;
 		try {
 			settlePendingRemovals();
 
-			if(registryChanged || !sweptUnregistered) {
+			var registryVersion = registry.version();
+			if(registryChanged
+				|| !sweptUnregistered
+				|| !Objects.equals(registryVersion, sweptRegistryVersion))
+			{
 				sweptUnregistered = true;
+				sweptRegistryVersion = registryVersion;
 				removeUnregisteredCopies();
 				removeCopiesOfReplacedGenerations();
 			}
