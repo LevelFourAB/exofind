@@ -492,8 +492,14 @@ public class ObjectStorageSync implements StateSync {
 				 * failed, so the objects it stopped naming are held from now.
 				 * Without the hold, the sweep measures their age from the
 				 * upload and can remove one that a reader is downloading.
+				 *
+				 * The diff starts from the manifest this node synchronized,
+				 * also when the baseline is empty. A write that found the
+				 * manifest missing by a passing 404 replaces that manifest,
+				 * and an object of a manifest that is gone is named by
+				 * nothing.
 				 */
-				deleteObsoleteRemoteObjects(baseline, manifest);
+				deleteObsoleteRemoteObjects(previousManifest, manifest);
 			}
 
 			maybeSweepRemote(manifest);
@@ -1086,6 +1092,27 @@ public class ObjectStorageSync implements StateSync {
 		var etag = statManifestETag();
 		if(etag == null) {
 			/*
+			 * Some storages answer 404 for a short time for an object that
+			 * exists, for example during a failover or behind a cache. Taken
+			 * as gone, the manifest of this node makes the write below fail
+			 * as a conflict, and the index drops the documents it
+			 * acknowledged. So the manifest is read again before it counts
+			 * as gone.
+			 */
+			var pulled = fetchRemoteManifest();
+			if(pulled != null) {
+				if(!pulled.manifest().equals(baseline)) {
+					throw new SyncConflictException(
+						"Remote manifest for " + index
+							+ " was replaced by another node; pull before pushing"
+					);
+				}
+
+				this.lastSyncedManifestETag = quoteETag(pulled.eTag());
+				return baseline;
+			}
+
+			/*
 			 * The manifest this node synchronized against is gone from the
 			 * remote. There is nothing left to overwrite, so the push goes on
 			 * as a first write and recreates it - but only for the generation
@@ -1247,7 +1274,7 @@ public class ObjectStorageSync implements StateSync {
 					return quoteETag(response.eTag());
 				} catch(S3Exception e) {
 					if(e.statusCode() == 412) {
-						return resolveRefusedManifest(manifest);
+						return resolveRefusedManifest(manifest, request, bytes);
 					}
 
 					/*
@@ -1337,19 +1364,63 @@ public class ObjectStorageSync implements StateSync {
 	 * was being pushed, the push has in fact happened. Anything else there was
 	 * written by another node.
 	 *
+	 * <p>A write on the condition that the remote holds no manifest is
+	 * written again when the remote holds the manifest this node last
+	 * synchronized. The storage then answered a passing 404 to the check
+	 * before the push, and the push builds on that manifest. The second
+	 * write is conditional on the tag of that manifest, as a push that
+	 * found it is.
+	 *
 	 * @param pushed
 	 *   the manifest this node tried to write
+	 * @param request
+	 *   the refused write
+	 * @param bytes
+	 *   the contents of {@code pushed}
 	 * @return
 	 *   the tag the remote serves the pushed manifest under
 	 * @throws SyncConflictException
 	 *   if the remote holds something other than the pushed manifest
 	 * @throws IOException
 	 */
-	private String resolveRefusedManifest(Manifest pushed) throws IOException {
+	private String resolveRefusedManifest(
+		Manifest pushed,
+		PutObjectRequest request,
+		byte[] bytes
+	) throws IOException {
 		var pulled = fetchRemoteManifest();
 
 		if(pulled != null && pulled.manifest().equals(pushed)) {
 			return quoteETag(pulled.eTag());
+		}
+
+		if(
+			request.ifNoneMatch() != null
+				&& pulled != null
+				&& pulled.manifest().equals(lastSyncedManifest)
+		) {
+			logger.atInfo()
+				.addKeyValue("index", index)
+				.addKeyValue("version", pulled.manifest().getVersion())
+				.log("Remote holds the manifest a check found missing, writing on top of it");
+
+			var retry = request.toBuilder()
+				.ifNoneMatch(null)
+				.ifMatch(quoteETag(pulled.eTag()))
+				.build();
+
+			try {
+				return quoteETag(client.putObject(retry, RequestBody.fromBytes(bytes)).eTag());
+			} catch(S3Exception e) {
+				if(e.statusCode() != 412) {
+					throw e;
+				}
+
+				pulled = fetchRemoteManifest();
+				if(pulled != null && pulled.manifest().equals(pushed)) {
+					return quoteETag(pulled.eTag());
+				}
+			}
 		}
 
 		throw new SyncConflictException(

@@ -1,6 +1,7 @@
 package se.l4.exofind.engine.index.state;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -52,6 +53,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -2169,6 +2171,90 @@ public class ObjectStorageSyncTest {
 			);
 
 		return client;
+	}
+
+	/**
+	 * Some storages answer a request for an object that exists with a 404
+	 * for a short time, for example during a failover or behind a cache. A
+	 * push whose check of the remote tag is answered that way must not take
+	 * the manifest this node wrote itself for one of another node: a
+	 * conflict makes the index drop the documents it acknowledged and pull.
+	 */
+	@Test
+	void aPushWhoseManifestCheckIsAnsweredWithAPassingNotFoundLands() throws Exception {
+		// Given: the node pushed and knows the tag of its manifest
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+		assertThat(remoteManifest().getVersion(), is(1L));
+
+		// And: the node is restarted and has pulled its own manifest
+		var flakyClient = Mockito.spy(s3Client);
+		var flakySync = newSync(flakyClient);
+		flakySync.pull();
+
+		// And: the next check of the remote manifest is answered with a 404 once
+		Mockito.doThrow(S3Exception.builder().statusCode(404).message("simulated passing not found").build())
+			.doCallRealMethod()
+			.when(flakyClient)
+			.headObject(ArgumentMatchers.any(HeadObjectRequest.class));
+
+		// When: the node pushes its next commit
+		var next = createLocalFile("segments_2", 12);
+		Throwable failure = null;
+		try {
+			push(flakySync, segment, next);
+		} catch(SyncConflictException e) {
+			failure = e;
+		}
+
+		// Then: the push lands on top of the manifest of this node
+		assertThat("conflict raised by the push", failure, is((Throwable) null));
+		assertThat(remoteManifest().getLatestSegment(), is(2L));
+		assertThat(remoteManifest().getVersion(), greaterThan(1L));
+	}
+
+	/**
+	 * A passing 404 can answer the second read of the manifest too. The
+	 * push then writes on the condition that the remote holds no manifest,
+	 * and the storage refuses it with the manifest of this node. The push
+	 * must write on top of that manifest, not report a conflict.
+	 */
+	@Test
+	void aPushWhoseManifestReadsAreAnsweredWithAPassingNotFoundLands() throws Exception {
+		// Given: the node pushed and knows the tag of its manifest
+		var segment = createLocalFile("segments_1", 10);
+		push(segment);
+
+		// And: the node is restarted and has pulled its own manifest
+		var flakyClient = Mockito.spy(s3Client);
+		var flakySync = newSync(flakyClient);
+		flakySync.pull();
+
+		// And: the next check and the next read of the manifest are answered with a 404 once
+		Mockito.doThrow(S3Exception.builder().statusCode(404).message("simulated passing not found").build())
+			.doCallRealMethod()
+			.when(flakyClient)
+			.headObject(ArgumentMatchers.any(HeadObjectRequest.class));
+		Mockito.doThrow(S3Exception.builder().statusCode(404).message("simulated passing not found").build())
+			.doCallRealMethod()
+			.when(flakyClient)
+			.getObject(ArgumentMatchers.<GetObjectRequest>argThat(
+				request -> request != null && request.key().endsWith("manifest.ef.bin")
+			));
+
+		// When: the node pushes its next commit
+		var next = createLocalFile("segments_2", 12);
+		Throwable failure = null;
+		try {
+			push(flakySync, segment, next);
+		} catch(SyncConflictException e) {
+			failure = e;
+		}
+
+		// Then: the push lands on top of the manifest of this node
+		assertThat("conflict raised by the push", failure, is((Throwable) null));
+		assertThat(remoteManifest().getLatestSegment(), is(2L));
+		assertThat(remoteManifest().getVersion(), greaterThan(1L));
 	}
 
 	/**
