@@ -8,6 +8,7 @@ import org.eclipse.collections.api.list.ListIterable;
 
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.index.state.ObjectStorageSync;
+import se.l4.exofind.engine.logging.Log;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -56,8 +57,17 @@ public class ObjectStorageReindexJobStorage implements ReindexJobStorage {
 	 * its marker: the delete that ends one job and the write that accepts the
 	 * next job for the same index are separate requests and can arrive out of
 	 * order. A caller that must not miss a job reads {@link #list()} as well.
+	 *
+	 * <p>A listing on one node and the accept of a job on another do not lose
+	 * the marker. The accept writes the marker before and again after the
+	 * record. The listing reads the record again after each delete and puts
+	 * the marker back when the record has become unfinished. Whichever of the
+	 * two requests that write the record and delete the marker arrives first,
+	 * one of these steps comes after both.
 	 */
 	private static final String ACTIVE_PATH = "jobs/reindex/active";
+
+	private static final Log logger = Log.of(ObjectStorageReindexJobStorage.class);
 
 	private final S3Client client;
 	private final String bucket;
@@ -108,11 +118,22 @@ public class ObjectStorageReindexJobStorage implements ReindexJobStorage {
 		 * then leaves a marker with no record, which the next listing deletes,
 		 * and never a running job with no marker.
 		 */
-		if(ReindexPhase.isPending(record)) {
+		var pending = ReindexPhase.isPending(record);
+		if(pending) {
 			markActive(index);
 		}
 
 		var version = writeRecord(index, record, expectedVersion);
+
+		if(version != null && pending) {
+			/*
+			 * A listing on another node can read the record from before this
+			 * write and delete the marker before this write lands. The marker
+			 * written again after the record cannot be deleted that way. See
+			 * ACTIVE_PATH.
+			 */
+			putMarkerQuietly(activeKeyOf(index));
+		}
 
 		if(version != null && ReindexPhase.isFinished(record)) {
 			clearActive(index);
@@ -228,20 +249,40 @@ public class ObjectStorageReindexJobStorage implements ReindexJobStorage {
 	 */
 	private void markActive(String index) throws IOException {
 		try {
-			client.putObject(
-				PutObjectRequest.builder()
-					.bucket(bucket)
-					.key(activeKeyOf(index))
-					.contentType("application/octet-stream")
-					.build(),
-				RequestBody.empty()
-			);
+			putMarker(activeKeyOf(index));
 		} catch(Exception e) {
 			throw new IOException(
 				"Unable to record the reindex as running; " + e.getMessage(),
 				e
 			);
 		}
+	}
+
+	/**
+	 * Write a marker again for a job whose record is already written. Best
+	 * effort: the record stands, and a job without a marker is still found by
+	 * {@link #list()}.
+	 */
+	private void putMarkerQuietly(String key) {
+		try {
+			putMarker(key);
+		} catch(Exception e) {
+			logger.atWarn()
+				.addKeyValue("marker", key)
+				.setCause(e)
+				.log("Could not write the marker of a running reindex again; " + e.getMessage());
+		}
+	}
+
+	private void putMarker(String key) {
+		client.putObject(
+			PutObjectRequest.builder()
+				.bucket(bucket)
+				.key(key)
+				.contentType("application/octet-stream")
+				.build(),
+			RequestBody.empty()
+		);
 	}
 
 	/**
@@ -295,7 +336,19 @@ public class ObjectStorageReindexJobStorage implements ReindexJobStorage {
 						 * every later listing pays the same read.
 						 */
 						deleteQuietly(object.key());
-						continue;
+
+						/*
+						 * A job accepted on another node can write its record
+						 * after the read above and before the delete. Read
+						 * again so that its marker is not left deleted. See
+						 * ACTIVE_PATH.
+						 */
+						stored = readKey(prefix + name).orElse(null);
+						if(stored == null || ReindexPhase.isFinished(stored.record())) {
+							continue;
+						}
+
+						putMarkerQuietly(object.key());
 					}
 
 					found.add(stored);

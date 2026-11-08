@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.lang3.RandomStringUtils;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +20,7 @@ import org.mockito.Mockito;
 import se.l4.exofind.engine.index.state.TestObjectStorage;
 import se.l4.exofind.engine.storage.ObjectStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -161,6 +163,112 @@ public class ObjectStorageReindexJobStorageTest {
 		Mockito.doReturn(client).when(wrapped).client();
 
 		return new ObjectStorageReindexJobStorage(wrapped);
+	}
+
+	/**
+	 * Another node lists the running jobs between the marker and the record
+	 * of a job being started, and reads the record of the job before it. The
+	 * job being started must still be listed afterwards, or a sweep never
+	 * resumes it.
+	 */
+	@Test
+	public void aJobStartedWhileAnotherNodeListsIsListedAfterwards() throws Exception {
+		// Given
+		var finished = jobStorage.write("catalogue", jobOf("catalogue", ReindexPhase.DONE), null);
+
+		var otherNode = new ObjectStorageReindexJobStorage(storage);
+		var listedBetween = new AtomicBoolean();
+		var starting = listingBeforeTheRecord(() -> {
+			if(!listedBetween.getAndSet(true)) {
+				otherNode.listUnfinished();
+			}
+		});
+
+		// When
+		starting.write("catalogue", jobOf("catalogue", ReindexPhase.PENDING), finished);
+
+		// Then
+		assertThat(listedBetween.get(), is(true));
+		assertThat(jobStorage.listUnfinished().size(), is(1));
+	}
+
+	/**
+	 * Another node reads the record of the job before the one being started,
+	 * and its delete of the marker arrives only after the start is complete.
+	 * The job being started must still be listed afterwards.
+	 */
+	@Test
+	public void aJobStartedBeforeAnotherNodeDeletesItsMarkerIsListedAfterwards()
+		throws Exception {
+		// Given
+		var finished = jobStorage.write("catalogue", jobOf("catalogue", ReindexPhase.DONE), null);
+		writeMarker("catalogue");
+
+		var started = new AtomicBoolean();
+		var otherNode = startingBeforeEachMarkerDelete(() -> {
+			if(!started.getAndSet(true)) {
+				jobStorage.write("catalogue", jobOf("catalogue", ReindexPhase.PENDING), finished);
+			}
+		});
+
+		// When
+		otherNode.listUnfinished();
+
+		// Then
+		assertThat(started.get(), is(true));
+		assertThat(jobStorage.listUnfinished().size(), is(1));
+	}
+
+	/**
+	 * Record storage over a client that runs a step just before each delete
+	 * of a marker.
+	 */
+	private ObjectStorageReindexJobStorage startingBeforeEachMarkerDelete(StorageStep step) {
+		var client = Mockito.spy(storage.client());
+
+		Mockito.doAnswer(invocation -> {
+			DeleteObjectRequest request = invocation.getArgument(0);
+			if(request.key().contains("jobs/reindex/active/")) {
+				step.run();
+			}
+
+			return invocation.callRealMethod();
+		}).when(client).deleteObject(ArgumentMatchers.any(DeleteObjectRequest.class));
+
+		var wrapped = Mockito.spy(storage);
+		Mockito.doReturn(client).when(wrapped).client();
+
+		return new ObjectStorageReindexJobStorage(wrapped);
+	}
+
+	/**
+	 * Record storage over a client that runs a step just before each put of
+	 * a record, after the marker of the job was written.
+	 */
+	private ObjectStorageReindexJobStorage listingBeforeTheRecord(StorageStep step) {
+		var client = Mockito.spy(storage.client());
+
+		Mockito.doAnswer(invocation -> {
+			PutObjectRequest request = invocation.getArgument(0);
+			if(request.key().contains("jobs/reindex/records/")) {
+				step.run();
+			}
+
+			return invocation.callRealMethod();
+		}).when(client).putObject(
+			ArgumentMatchers.any(PutObjectRequest.class),
+			ArgumentMatchers.any(RequestBody.class)
+		);
+
+		var wrapped = Mockito.spy(storage);
+		Mockito.doReturn(client).when(wrapped).client();
+
+		return new ObjectStorageReindexJobStorage(wrapped);
+	}
+
+	@FunctionalInterface
+	private interface StorageStep {
+		void run() throws IOException;
 	}
 
 	private static ReindexJobStore jobOf(String index, ReindexPhase phase) {
