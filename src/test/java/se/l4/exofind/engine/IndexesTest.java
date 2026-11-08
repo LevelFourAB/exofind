@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
@@ -438,6 +439,64 @@ public class IndexesTest {
 		}
 
 		throw new AssertionError("The write neither finished nor waited within the wait");
+	}
+
+	/**
+	 * A promote by hand switches the generation a name answers from while
+	 * writes run. A write already inside its change must finish before the
+	 * switch, the way a promote by a reindex job holds writes, so that no
+	 * write is acknowledged in a generation the name has stopped answering
+	 * from as it lands.
+	 */
+	@Test
+	public void testAManualPromoteWaitsForAWriteInsideItsChange() throws Exception {
+		// Given
+		indexes.create("books", keyed());
+		indexes.createGeneration("books@2", keyed());
+
+		var inside = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		var writer = new Thread(() -> indexes.write("books", index -> {
+			inside.countDown();
+			try {
+				release.await();
+				index.addDocument(new Document(new Document.Value("id", "1")));
+				return index.getId();
+			} catch(IOException e) {
+				throw new UncheckedIOException(e);
+			} catch(InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return null;
+			}
+		}));
+		writer.start();
+		assertThat(inside.await(10, TimeUnit.SECONDS), is(true));
+
+		// When
+		var promoted = new CompletableFuture<Void>();
+		var promoter = new Thread(() -> {
+			indexes.promote("books@2");
+			promoted.complete(null);
+		});
+		promoter.start();
+
+		var deadline = System.currentTimeMillis() + 5000;
+		while(!promoted.isDone() && promoter.getState() != Thread.State.WAITING
+			&& System.currentTimeMillis() < deadline) {
+			Thread.sleep(10);
+		}
+		var doneWhileTheWriteRan = promoted.isDone();
+
+		release.countDown();
+		writer.join(10_000);
+		promoter.join(10_000);
+
+		// Then
+		assertThat(
+			"the promote finished while a write was inside its change",
+			doneWhileTheWriteRan,
+			is(false)
+		);
 	}
 
 	/**

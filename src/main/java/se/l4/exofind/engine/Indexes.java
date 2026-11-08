@@ -3290,6 +3290,12 @@ public class Indexes implements RegistryPoller.Listener {
 	 * index by name reads the promoted generation from here on, on this node at
 	 * once and on every other within its refresh interval.
 	 *
+	 * <p>When this node holds the replaced generation open, the promote is
+	 * made under a {@link Index#holdWrites() hold} on it. Writes on this node
+	 * that are already inside that generation finish before the switch.
+	 * Writes that start during the promote wait and then go to the promoted
+	 * generation.
+	 *
 	 * @param name
 	 *   name of the generation, as {@code index@generation}
 	 * @return
@@ -3308,7 +3314,37 @@ public class Indexes implements RegistryPoller.Listener {
 			);
 		}
 
-		return registry.promote(generation.index(), generation.generation());
+		try(var hold = holdWritesToLive(generation.index())) {
+			return registry.promote(generation.index(), generation.generation());
+		}
+	}
+
+	/**
+	 * Hold the writes to the generation an index answers from, for a promote
+	 * that replaces it.
+	 *
+	 * @return
+	 *   the hold, or a hold that does nothing when this node does not hold
+	 *   the generation open
+	 */
+	private Index.WriteHold holdWritesToLive(String index) {
+		IndexName live;
+		try {
+			live = registry.resolve(IndexName.parse(index));
+		} catch(RuntimeException e) {
+			// The promote itself reports why the index can not be promoted
+			return () -> {};
+		}
+
+		/*
+		 * Not opened here. An open can wait for a hold on an instance that
+		 * was evicted, and that hold can be the one the caller of the promote
+		 * keeps. A promote is also how an operator moves an index off a
+		 * generation that can not be opened. The cost is that a write which
+		 * is still opening the generation is not held.
+		 */
+		var open = indexes.asMap().get(live.toString());
+		return open == null ? () -> {} : open.holdWrites();
 	}
 
 	/**
