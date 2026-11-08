@@ -213,6 +213,35 @@ public class ObjectStorageRegistryAuditTest {
 	}
 
 	/**
+	 * An entry that names a feature this build does not have can name its
+	 * generations in a way this build does not read. A repair on an older
+	 * node must leave such an entry as it is stored.
+	 */
+	@Test
+	public void testRepairLeavesAnEntryThatNeedsAnUnknownFeatureAsStored() throws IOException {
+		// Given an entry from a newer version that lists books@1, and books@2 held in the bucket
+		putManifest("books", "1");
+		putManifest("books", "2");
+
+		var stored = entry("books", "1", "1").toBuilder()
+			.addRequiredFeatures("future")
+			.build();
+		putRegistry(IndexRegistryStore.newBuilder().addIndexes(stored).build());
+
+		// When an older node repairs the registry
+		var result = audit.repair(false, Lists.immutable.empty());
+
+		// Then the entry is left as it was stored
+		var after = ((RegistryStorage.Read.Loaded) registryStorage.read(null)).indexes();
+		assertThat(
+			"entry with an unknown feature changed, added " + result.addedGenerations(),
+			after.getIndexes(0),
+			is(stored)
+		);
+		assertThat(result.addedGenerations(), emptyIterable());
+	}
+
+	/**
 	 * Without being asked to promote, a rebuilt index answers for nothing
 	 * until an operator promotes a generation.
 	 */
@@ -253,7 +282,7 @@ public class ObjectStorageRegistryAuditTest {
 	/**
 	 * A generation the registry does not name is registered onto the entry
 	 * that is already there, which keeps everything else about the entry -
-	 * what it answers for, the feature names it carries - exactly as stored.
+	 * what it answers for - exactly as stored.
 	 */
 	@Test
 	public void testUnregisteredGenerationJoinsItsIndex() throws IOException {
@@ -261,11 +290,7 @@ public class ObjectStorageRegistryAuditTest {
 		putManifest("books", "2");
 		putRegistry(
 			IndexRegistryStore.newBuilder()
-				.addIndexes(
-					entry("books", "1", "1").toBuilder()
-						.addRequiredFeatures("future.thing")
-						.build()
-				)
+				.addIndexes(entry("books", "1", "1"))
 				.build()
 		);
 
@@ -278,7 +303,6 @@ public class ObjectStorageRegistryAuditTest {
 		var books = stored.getIndexes(0);
 
 		assertThat(books.getLive(), is("1"));
-		assertThat(books.getRequiredFeaturesList(), contains("future.thing"));
 		assertThat(books.getGenerationsCount(), is(2));
 	}
 

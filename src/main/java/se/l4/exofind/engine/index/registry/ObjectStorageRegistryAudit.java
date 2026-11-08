@@ -714,6 +714,25 @@ public class ObjectStorageRegistryAudit implements RegistryAudit {
 			if(position != null) {
 				var entry = store.getIndexesBuilder(position);
 
+				/*
+				 * A newer version can name generations in a way this build
+				 * does not read, which is what its required features say.
+				 * Adding a generation here could change what the entry means
+				 * to the nodes that read it.
+				 */
+				var unsupported = RegistryFeatures.unsupportedIn(entry.getRequiredFeaturesList());
+				if(unsupported.notEmpty()) {
+					logger.atWarn()
+						.addKeyValue("index", index.getKey())
+						.addKeyValue("features", unsupported.toSortedList().makeString(", "))
+						.log(
+							"The index needs features this build does not have, so the repair"
+								+ " leaves its registry entry as stored. Run the repair on a node"
+								+ " of the newer version"
+						);
+					continue;
+				}
+
 				var existing = new TreeSet<String>();
 				for(var generation : entry.getGenerationsList()) {
 					existing.add(generation.getName());
