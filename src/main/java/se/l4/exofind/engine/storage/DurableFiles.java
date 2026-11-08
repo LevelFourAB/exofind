@@ -12,6 +12,7 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.lucene.util.IOUtils;
 
@@ -26,6 +27,11 @@ import org.apache.lucene.util.IOUtils;
  * on the disk, which leaves the previous contents behind instead.
  *
  * <p>The directory a file is written to has to exist.
+ *
+ * <p>Threads of one process can write the same file at the same time. Writes
+ * of one file are done one at a time, and the file then holds the complete
+ * contents of the write that finished last. Two processes that write the same
+ * file are not kept apart.
  */
 public final class DurableFiles {
 	/**
@@ -44,6 +50,19 @@ public final class DurableFiles {
 		PosixFilePermission.OWNER_READ,
 		PosixFilePermission.OWNER_WRITE
 	);
+
+	/**
+	 * Locks that keep two writes of one file from sharing the temporary file.
+	 * A file uses the lock its path hashes to, so two files can share a lock.
+	 * A write holds one lock and nothing else, so the sharing cannot deadlock.
+	 */
+	private static final ReentrantLock[] WRITE_LOCKS = new ReentrantLock[64];
+
+	static {
+		for(var i = 0; i < WRITE_LOCKS.length; i++) {
+			WRITE_LOCKS[i] = new ReentrantLock();
+		}
+	}
 
 	private DurableFiles() {
 	}
@@ -86,7 +105,20 @@ public final class DurableFiles {
 	private static void replace(Path file, byte[] contents, boolean ownerOnly)
 		throws IOException
 	{
-		var directory = file.toAbsolutePath().getParent();
+		var absolute = file.toAbsolutePath().normalize();
+		var lock = WRITE_LOCKS[Math.floorMod(absolute.hashCode(), WRITE_LOCKS.length)];
+		lock.lock();
+		try {
+			replaceLocked(absolute, contents, ownerOnly);
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	private static void replaceLocked(Path file, byte[] contents, boolean ownerOnly)
+		throws IOException
+	{
+		var directory = file.getParent();
 		var temp = file.resolveSibling(file.getFileName() + TEMP_SUFFIX);
 
 		write(temp, contents, ownerOnly);

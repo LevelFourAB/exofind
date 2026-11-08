@@ -13,8 +13,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -110,6 +116,68 @@ public class DurableFilesTest {
 			Files.getPosixFilePermissions(file),
 			is(Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))
 		);
+	}
+
+	/**
+	 * Two writers of one file that run at the same time each finish, and the
+	 * file then holds the whole contents of one of them. The two writes are
+	 * started together many times, as nothing in the class lets a test hold
+	 * one write between its steps.
+	 */
+	@Test
+	public void twoWritesOfOneFileAtTheSameTimeBothFinish() throws Exception {
+		// Given
+		var file = dir.resolve("usage.ef.bin");
+		var first = filled('a', 64 * 1024);
+		var second = filled('b', 32 * 1024);
+		var rounds = 200;
+		var start = new CyclicBarrier(2);
+		var failures = new ConcurrentLinkedQueue<Throwable>();
+		var mixed = new AtomicInteger();
+
+		// When
+		var writers = Executors.newFixedThreadPool(2);
+		try {
+			for(var round = 0; round < rounds; round++) {
+				var a = writers.submit(() -> write(file, first, start, failures));
+				var b = writers.submit(() -> write(file, second, start, failures));
+				a.get(30, TimeUnit.SECONDS);
+				b.get(30, TimeUnit.SECONDS);
+
+				var contents = Files.readAllBytes(file);
+				if(!Arrays.equals(contents, first) && !Arrays.equals(contents, second)) {
+					mixed.incrementAndGet();
+				}
+			}
+		} finally {
+			writers.shutdownNow();
+		}
+
+		// Then
+		assertThat("writes that failed: " + failures.peek(), failures.size(), is(0));
+		assertThat("rounds that left mixed contents", mixed.get(), is(0));
+	}
+
+	private static Void write(
+		Path file,
+		byte[] contents,
+		CyclicBarrier start,
+		ConcurrentLinkedQueue<Throwable> failures
+	) throws Exception {
+		start.await(30, TimeUnit.SECONDS);
+		try {
+			DurableFiles.replace(file, contents);
+		} catch(IOException e) {
+			failures.add(e);
+		}
+
+		return null;
+	}
+
+	private static byte[] filled(char value, int size) {
+		var contents = new byte[size];
+		Arrays.fill(contents, (byte) value);
+		return contents;
 	}
 
 	private static byte[] bytes(String contents) {
