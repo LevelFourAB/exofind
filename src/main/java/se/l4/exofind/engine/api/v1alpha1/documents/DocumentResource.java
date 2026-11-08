@@ -2526,6 +2526,11 @@ public class DocumentResource {
 		when = "A key cannot be read as the type of the primary key field."
 	)
 	@ReturnsError(
+		value = "document:string:surrogate_unpaired",
+		status = 400,
+		when = "A key holds an unpaired UTF-16 surrogate, such as a lone `\\uD800` escape. No document can have such a key, so no documents are removed."
+	)
+	@ReturnsError(
 		value = "document:key_required",
 		status = 400,
 		when = "An entry of `keys` carries no key."

@@ -1226,6 +1226,54 @@ public class DocumentResourceTest {
 		}
 	}
 
+	/**
+	 * Lucene writes an unpaired surrogate in a term as U+FFFD, so a delete by
+	 * such a key would remove the document whose key holds U+FFFD. The key
+	 * names no document that can exist, and the delete is refused.
+	 */
+	@Test
+	public void testADeleteByAKeyWithAnUnpairedSurrogateRemovesNothing() throws IOException {
+		// Given
+		var index = foods();
+		resource.add("foods", null, new DocumentsRequest(List.of(document("id", "a�"))));
+		index.commit();
+
+		// When
+		var e = assertThrows(
+			ValidationException.class,
+			() -> resource.delete("foods", new DeleteRequest(List.of("a\uD800"), null, null, null))
+		);
+		index.commit();
+
+		// Then
+		assertThat(
+			e.getErrors().collect(error -> error.getCode()).toList(),
+			contains("document:string:surrogate_unpaired")
+		);
+		assertThat(index.getDocument("a�"), is(notNullValue()));
+	}
+
+	/**
+	 * A lookup by a key with an unpaired surrogate does not answer with the
+	 * document whose key holds U+FFFD.
+	 */
+	@Test
+	public void testAGetByAKeyWithAnUnpairedSurrogateIsRefused() throws IOException {
+		// Given
+		var index = foods();
+		resource.add("foods", null, new DocumentsRequest(List.of(document("id", "a�"))));
+		index.commit();
+
+		// When
+		var e = assertThrows(ValidationException.class, () -> index.getDocument("a\uD800"));
+
+		// Then
+		assertThat(
+			e.getErrors().collect(error -> error.getCode()).toList(),
+			contains("document:string:surrogate_unpaired")
+		);
+	}
+
 	private boolean refusesAdd(Map<String, Object> document) throws IOException {
 		try {
 			resource.add("foods", null, new DocumentsRequest(List.of(document)));

@@ -2345,6 +2345,20 @@ public class StringFieldType implements FieldType {
 			throw new IndexInvalidQueryValueException(encounter.getFieldName(), "string");
 		}
 
+		/*
+		 * Lucene writes an unpaired surrogate in a term as U+FFFD, so this key
+		 * would name the document whose key holds U+FFFD there. No document can
+		 * have this key, because createFields refuses it.
+		 */
+		if(hasUnpairedSurrogate(text)) {
+			throw new ValidationException(
+				SURROGATE_UNPAIRED.toMessage(
+					ObjectLocation.root().forField(encounter.getFieldName()),
+					"name", encounter.getFieldName()
+				)
+			);
+		}
+
 		return new Term(encounter.name(FieldNames.PRIMARY_KEY), text);
 	}
 }
