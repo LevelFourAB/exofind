@@ -1271,7 +1271,7 @@ public class Index {
 				return;
 			}
 
-			if(def.getSerializedSize() == 0 && holdsCommit()) {
+			if(def.getSerializedSize() == 0 && holdsCommittedDocuments()) {
 				/*
 				 * Every definition written here sets the source mode, so an
 				 * empty one is a file that is missing or that a crash left
@@ -1279,7 +1279,9 @@ public class Index {
 				 * definition, and opening them under an empty one serves an
 				 * index with no fields. A writer would also push a manifest
 				 * that names no definition. The next pull downloads the
-				 * definition again.
+				 * definition again. A commit without documents is left to
+				 * open: a writer that closes before the definition arrives
+				 * commits and pushes one.
 				 */
 				logger.atError()
 					.addKeyValue("index", id)
@@ -2385,22 +2387,16 @@ public class Index {
 	}
 
 	/**
-	 * Whether the local copy holds a Lucene commit, or the copy that was last
-	 * synchronized held one. Called with the write lock held.
+	 * Whether the newest commit in the local copy holds documents. Opens the
+	 * directory if it is not open yet. Called with the write lock held.
 	 */
-	private boolean holdsCommit() throws IOException {
-		if(sync.hasSyncedCommit()) {
-			return true;
+	private boolean holdsCommittedDocuments() throws IOException {
+		if(this.directory == null) {
+			this.directory = FSDirectory.open(localPath);
 		}
 
-		String[] names;
-		try(var files = Files.list(localPath)) {
-			names = files
-				.map(path -> path.getFileName().toString())
-				.toArray(String[]::new);
-		}
-
-		return SegmentInfos.getLastCommitGeneration(names) >= 0;
+		return DirectoryReader.indexExists(directory)
+			&& SegmentInfos.readLatestCommit(directory).totalMaxDoc() > 0;
 	}
 
 	private IndexDef readDefinition() {
