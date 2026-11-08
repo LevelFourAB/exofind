@@ -15,6 +15,12 @@ package se.l4.exofind.engine.reindex;
  * markers instead of reading every record. The same rules as for an index
  * definition apply: scalars are `optional` so unset can be told apart from
  * the zero value, and a field number is never reused.
+ *
+ * During a rolling upgrade, a node of an older build can resume a job that a
+ * newer node started. It writes the fields it cannot read back unchanged with
+ * every write of the record, but it runs the job without them. A field added
+ * to ReindexJobStore that changes what the job does must therefore come with
+ * a phase or another signal that an older build refuses.
  */
 
 /*

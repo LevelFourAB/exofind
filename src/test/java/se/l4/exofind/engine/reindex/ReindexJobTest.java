@@ -8,11 +8,18 @@ import java.time.Instant;
 
 import org.junit.jupiter.api.Test;
 
+import com.google.protobuf.UnknownFieldSet;
+
 /**
  * How a job is written to and read back from its record, including a record
  * an earlier version wrote without the fields this version keeps.
  */
 public class ReindexJobTest {
+	/**
+	 * A field number that reindex.proto does not use yet.
+	 */
+	private static final int FUTURE_FIELD = 99;
+
 	@Test
 	public void aJobSurvivesTheRoundTrip() {
 		var started = Instant.parse("2026-08-28T10:15:30Z");
@@ -101,5 +108,41 @@ public class ReindexJobTest {
 		var rewritten = cancelled.written("node-b", started.plusSeconds(30));
 		assertThat(rewritten.finishedAt(), is(started.plusSeconds(20)));
 		assertThat(rewritten.updatedAt(), is(started.plusSeconds(30)));
+	}
+
+	/**
+	 * A record a newer version wrote can hold fields this version does not
+	 * know. A checkpoint written over it must keep them, or a newer node that
+	 * picks the job up again reads it without part of what was asked for.
+	 */
+	@Test
+	public void aCheckpointKeepsTheFieldsANewerVersionWrote() {
+		// Given
+		var started = Instant.parse("2026-08-28T10:15:30Z");
+		var job = new ReindexJob(
+			"job-1", "products", "2", "1",
+			ReindexPhase.COPYING,
+			"prod_10", 10, 100, 0, null, false, "tester", "node-a",
+			started, started, null, null, null
+		);
+		var newer = job.toStore().toBuilder()
+			.setUnknownFields(
+				UnknownFieldSet.newBuilder()
+					.addField(
+						FUTURE_FIELD,
+						UnknownFieldSet.Field.newBuilder().addVarint(1).build()
+					)
+					.build()
+			)
+			.build();
+
+		// When
+		var rewritten = ReindexJob.fromStore(newer).orElseThrow()
+			.withBacklog(1)
+			.written("node-b", started.plusSeconds(10))
+			.toStore();
+
+		// Then
+		assertThat(rewritten.getUnknownFields().hasField(FUTURE_FIELD), is(true));
 	}
 }

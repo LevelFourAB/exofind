@@ -3,6 +3,8 @@ package se.l4.exofind.engine.reindex;
 import java.time.Instant;
 import java.util.Optional;
 
+import com.google.protobuf.UnknownFieldSet;
+
 import se.l4.exofind.engine.index.IndexName;
 
 /**
@@ -55,6 +57,9 @@ import se.l4.exofind.engine.index.IndexName;
  * @param targetCreatedAt
  *   when the target generation was created, as the registry states it, or
  *   {@code null} when not known
+ * @param unknownFields
+ *   fields of the record that a newer version wrote and this version does
+ *   not know, written back unchanged with every write of the record
  */
 public record ReindexJob(
 	String id,
@@ -74,8 +79,40 @@ public record ReindexJob(
 	Instant updatedAt,
 	Instant finishedAt,
 	Instant sourceCreatedAt,
-	Instant targetCreatedAt
+	Instant targetCreatedAt,
+	UnknownFieldSet unknownFields
 ) {
+	/**
+	 * A job whose record holds no fields that this version does not know.
+	 */
+	public ReindexJob(
+		String id,
+		String index,
+		String target,
+		String source,
+		ReindexPhase phase,
+		String cursor,
+		long documentsCopied,
+		long sourceDocCount,
+		long backlog,
+		String error,
+		boolean manualPromote,
+		String startedBy,
+		String node,
+		Instant startedAt,
+		Instant updatedAt,
+		Instant finishedAt,
+		Instant sourceCreatedAt,
+		Instant targetCreatedAt
+	) {
+		this(
+			id, index, target, source, phase, cursor, documentsCopied,
+			sourceDocCount, backlog, error, manualPromote, startedBy, node,
+			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt,
+			UnknownFieldSet.getDefaultInstance()
+		);
+	}
+
 	/**
 	 * The full name of the generation being filled, as a caller writes it.
 	 */
@@ -98,7 +135,8 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, phase, cursor, documentsCopied,
 			sourceDocCount, backlog, null, manualPromote, startedBy, node,
-			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt
+			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt,
+			unknownFields
 		);
 	}
 
@@ -109,7 +147,8 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, phase, cursor, documentsCopied,
 			sourceDocCount, backlog, error, manualPromote, startedBy, node,
-			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt
+			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt,
+			unknownFields
 		);
 	}
 
@@ -120,7 +159,8 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, phase, cursor, documentsCopied + copied,
 			sourceDocCount, backlog, error, manualPromote, startedBy, node,
-			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt
+			startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt,
+			unknownFields
 		);
 	}
 
@@ -131,7 +171,8 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, ReindexPhase.FAILED, cursor,
 			documentsCopied, sourceDocCount, backlog, error, manualPromote,
-			startedBy, node, startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt
+			startedBy, node, startedAt, updatedAt, finishedAt, sourceCreatedAt, targetCreatedAt,
+			unknownFields
 		);
 	}
 
@@ -154,12 +195,14 @@ public record ReindexJob(
 		return new ReindexJob(
 			id, index, target, source, phase, cursor, documentsCopied,
 			sourceDocCount, backlog, error, manualPromote, startedBy, node,
-			startedAt, now, finished, sourceCreatedAt, targetCreatedAt
+			startedAt, now, finished, sourceCreatedAt, targetCreatedAt,
+			unknownFields
 		);
 	}
 
 	ReindexJobStore toStore() {
 		var builder = ReindexJobStore.newBuilder()
+			.setUnknownFields(unknownFields)
 			.setIndex(index)
 			.setTarget(target)
 			.setSource(source)
@@ -233,7 +276,8 @@ public record ReindexJob(
 				Instant.ofEpochMilli(store.getUpdatedAt()),
 				store.hasFinishedAt() ? Instant.ofEpochMilli(store.getFinishedAt()) : null,
 				store.hasSourceCreatedAt() ? Instant.ofEpochMilli(store.getSourceCreatedAt()) : null,
-				store.hasTargetCreatedAt() ? Instant.ofEpochMilli(store.getTargetCreatedAt()) : null
+				store.hasTargetCreatedAt() ? Instant.ofEpochMilli(store.getTargetCreatedAt()) : null,
+				store.getUnknownFields()
 			));
 	}
 }
