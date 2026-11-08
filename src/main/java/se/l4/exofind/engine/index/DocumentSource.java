@@ -88,6 +88,11 @@ public final class DocumentSource {
 	}
 
 	private static SourceDocument.Builder encodeDocument(Document doc, Predicate<String> kept) {
+		/*
+		 * Built from the document alone, so a field of the stored copy that
+		 * this version does not know is not written again. The header of
+		 * documents.proto states why an older node never writes such a copy.
+		 */
 		var builder = SourceDocument.newBuilder();
 
 		for(var value : doc.fields()) {

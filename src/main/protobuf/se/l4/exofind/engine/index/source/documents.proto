@@ -13,6 +13,15 @@ package se.l4.exofind.engine.index.source;
  * What is here describes itself. Reading a document back needs no definition,
  * so a document can be indexed again after its definition changed, even when
  * the values are no longer available from where they first came.
+ *
+ * A patch and a reindex copy read a document and write it again, and that
+ * write keeps only the fields this version knows. A field that a newer version
+ * adds beside the value of a SourceField, or beside the fields of a
+ * SourceDocument, is lost on that write. So a version that adds such a field
+ * also records a feature name in IndexFeatures for each definition whose
+ * documents hold it. An older node then refuses the definition and never
+ * writes those documents again. A new case of `value` needs no rule of its
+ * own, because the feature name of the type it holds does the same.
  */
 
 /*
