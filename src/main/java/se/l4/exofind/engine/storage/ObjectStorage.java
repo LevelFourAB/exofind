@@ -3,7 +3,9 @@ package se.l4.exofind.engine.storage;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.function.Consumer;
@@ -42,11 +44,18 @@ public class ObjectStorage {
 	private static final String INDEXES_PATH = "indexes";
 
 	/**
-	 * Scratch object used to check that the storage enforces conditional
-	 * writes. Lives directly under the prefix, where nothing reads it as an
-	 * index.
+	 * Prefix of the scratch objects used to check that the storage enforces
+	 * conditional writes. Lives directly under the prefix, where nothing
+	 * reads it as an index. Each check writes its own object below it, as a
+	 * check that removes the object of another check makes the conditions
+	 * of that check hold.
 	 */
 	private static final String PROBE_PATH = ".conditional-write-probe";
+
+	/**
+	 * Source of the names that keep the probe objects of two checks apart.
+	 */
+	private static final SecureRandom PROBE_IDS = new SecureRandom();
 
 	private final S3Client client;
 	private final String bucket;
@@ -194,7 +203,11 @@ public class ObjectStorage {
 			 * another writer, so it refuses to start against a storage that
 			 * does not enforce them rather than run unfenced.
 			 */
-			verifyConditionalWrites(client, bucket, rootObject(PROBE_PATH));
+			verifyConditionalWrites(
+				client,
+				bucket,
+				rootObject(PROBE_PATH + "/" + HexFormat.of().toHexDigits(PROBE_IDS.nextLong()))
+			);
 		}
 	}
 

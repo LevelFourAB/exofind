@@ -13,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.RandomStringUtils;
@@ -25,8 +27,12 @@ import org.mockito.Mockito;
 
 import se.l4.exofind.engine.index.IndexName;
 import se.l4.exofind.engine.storage.ObjectStorage;
+import software.amazon.awssdk.core.interceptor.Context;
+import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
+import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 @ExtendWith(QuietLuceneVersionWarnings.class)
 public class ObjectStorageSyncProviderTest {
@@ -149,6 +155,57 @@ public class ObjectStorageSyncProviderTest {
 		).contents().stream().toList();
 
 		assertThat(leftovers, emptyIterable());
+	}
+
+	/**
+	 * Indexer replicas are often started at the same time. The check that
+	 * the storage enforces conditional writes must not take the probe
+	 * object of one node for its own: when another node removes its probe
+	 * in between, the storage is still one that enforces the conditions.
+	 */
+	@Test
+	void twoIndexersThatStartTogetherBothStart() throws Exception {
+		// Given: a node whose check is between its first probe write and its conditional one
+		var armed = new AtomicBoolean(true);
+		var otherFailure = new AtomicReference<Throwable>();
+		var interleave = new ExecutionInterceptor() {
+			@Override
+			public void beforeExecution(Context.BeforeExecution context, ExecutionAttributes attributes) {
+				if(
+					context.request() instanceof PutObjectRequest put
+						&& put.key().contains(".conditional-write-probe")
+						&& put.ifNoneMatch() != null
+						&& armed.getAndSet(false)
+				) {
+					// When: another node starts and runs its whole check in that gap
+					try {
+						newStorage(true);
+					} catch(Throwable t) {
+						otherFailure.set(t);
+					}
+				}
+			}
+		};
+
+		Throwable failure = null;
+		try {
+			new ObjectStorage(
+				Optional.of(TestObjectStorage.url()),
+				TestObjectStorage.auth(),
+				Optional.empty(),
+				TestObjectStorage.BUCKET,
+				Optional.of(storagePrefix),
+				true,
+				interleave
+			);
+		} catch(IOException e) {
+			failure = e;
+		}
+
+		// Then: both nodes start
+		assertThat("the other node ran its check", armed.get(), is(false));
+		assertThat("failure of the other node", otherFailure.get(), is((Throwable) null));
+		assertThat("failure of the first node", failure, is((Throwable) null));
 	}
 
 	/**

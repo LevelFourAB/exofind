@@ -21,7 +21,7 @@ prefix in `object` mode:
 | `auth/keys.ef.bin` | Nodes serving the keys API | Every API key of the deployment. Single object, replaced conditionally on its entity tag. The root key (`EXOFIND_AUTH_ROOT_KEY`) is never stored. |
 | `jobs/reindex/records/<index>` | The node writing the index | One durable reindex job record per index name, retained after the job ends. |
 | `jobs/reindex/active/<index>` | The node writing the index | One empty marker per reindex job that has not finished, named like its record. A candidate looking for jobs to resume lists this prefix and removes markers for finished records. |
-| `.conditional-write-probe` | A node started as an indexer candidate | Scratch object written at startup to verify that the storage backend enforces conditional writes. The node deletes this object when the check finishes. |
+| `.conditional-write-probe/<id>` | A node started as an indexer candidate | Scratch object written at startup to verify that the storage backend enforces conditional writes. The id is random for each check, so nodes that start at the same time do not share an object. The node deletes this object when the check finishes. |
 
 `registry/indexes.ef.bin`, `indexer-leadership.ef.bin`, and `auth/keys.ef.bin`
 are single objects replaced conditionally on their entity tag.
