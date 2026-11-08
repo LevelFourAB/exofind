@@ -626,7 +626,14 @@ public class ObjectStorageSync implements StateSync {
 				.bucket(remoteBucket)
 				.key(remotePrefix + "/" + MANIFEST_NAME);
 
-			if(lastSyncedManifestETag != null) {
+			/*
+			 * A copy that lost the commit its manifest names is repaired from
+			 * the manifest the remote holds, also when that manifest has not
+			 * changed. The tag is then left out, as a 304 brings no manifest
+			 * to repair from.
+			 */
+			var commitLost = lostSyncedCommit();
+			if(lastSyncedManifestETag != null && !commitLost) {
 				requestBuilder.ifNoneMatch(lastSyncedManifestETag);
 			}
 
@@ -660,7 +667,7 @@ public class ObjectStorageSync implements StateSync {
 				return false;
 			}
 
-			if(manifest.equals(lastSyncedManifest)) {
+			if(manifest.equals(lastSyncedManifest) && !commitLost) {
 				logger.atDebug()
 					.addKeyValue("index", index)
 					.addKeyValue("version", manifest.getVersion())
@@ -688,11 +695,19 @@ public class ObjectStorageSync implements StateSync {
 				);
 			}
 
-			logger.atInfo()
-				.addKeyValue("index", index)
-				.addKeyValue("remoteVersion", manifest.getVersion())
-				.addKeyValue("localVersion", lastSyncedManifest.getVersion())
-				.log("Index updates are available, synchronizing");
+			if(commitLost) {
+				logger.atWarn()
+					.addKeyValue("index", index)
+					.addKeyValue("remoteVersion", manifest.getVersion())
+					.addKeyValue("localVersion", lastSyncedManifest.getVersion())
+					.log("Local copy lost the commit its manifest names, downloading the missing files");
+			} else {
+				logger.atInfo()
+					.addKeyValue("index", index)
+					.addKeyValue("remoteVersion", manifest.getVersion())
+					.addKeyValue("localVersion", lastSyncedManifest.getVersion())
+					.log("Index updates are available, synchronizing");
+			}
 
 			var currentFiles = new HashMap<String, ManifestFile>();
 			for(var file : lastSyncedManifest.getFilesList()) {
@@ -845,12 +860,69 @@ public class ObjectStorageSync implements StateSync {
 	 * @return
 	 */
 	private static boolean namesCommit(Manifest manifest) {
+		return commitGeneration(manifest) >= 0;
+	}
+
+	/**
+	 * The generation of the Lucene commit a manifest names.
+	 *
+	 * @param manifest
+	 *   manifest to read
+	 * @return
+	 *   the generation, or a negative number when the manifest names no commit
+	 */
+	private static long commitGeneration(Manifest manifest) {
 		var names = manifest.getFilesList()
 			.stream()
 			.map(ManifestFile::getName)
 			.toArray(String[]::new);
 
-		return SegmentInfos.getLastCommitGeneration(names) >= 0;
+		return SegmentInfos.getLastCommitGeneration(names);
+	}
+
+	/**
+	 * Whether the local directory lost the commit that the last synchronized
+	 * manifest names. A process that stops while it removes the directory, a
+	 * disk fault or an operator can remove the {@code segments} file and leave
+	 * the manifest. The manifest then says that the directory holds a commit,
+	 * and opening the directory gives an empty index or no writer.
+	 *
+	 * <p>Runs on every pull, so the usual answer costs one file check. Only a
+	 * missing {@code segments} file causes a listing of the directory. A writer
+	 * that committed after the manifest holds a newer commit, and Lucene has
+	 * removed the older one. That directory did not lose its commit, and the
+	 * newer commit holds changes that the remote does not have.
+	 *
+	 * @return
+	 *   {@code true} when the manifest names a commit and the directory holds
+	 *   no commit
+	 * @throws IOException
+	 */
+	private boolean lostSyncedCommit() throws IOException {
+		var generation = commitGeneration(lastSyncedManifest);
+		if(generation < 0) {
+			return false;
+		}
+
+		var segmentsFile = IndexFileNames.fileNameFromGeneration(
+			IndexFileNames.SEGMENTS, "", generation
+		);
+
+		if(Files.exists(localPath.resolve(segmentsFile))) {
+			return false;
+		}
+
+		if(!Files.isDirectory(localPath)) {
+			return true;
+		}
+
+		try(var listing = Files.list(localPath)) {
+			var local = listing
+				.map(path -> path.getFileName().toString())
+				.toArray(String[]::new);
+
+			return SegmentInfos.getLastCommitGeneration(local) < 0;
+		}
 	}
 
 	/**

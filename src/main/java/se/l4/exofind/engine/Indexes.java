@@ -2210,13 +2210,6 @@ public class Indexes implements RegistryPoller.Listener {
 					return false;
 				}
 
-				/*
-				 * The manifest goes first: it claims the files next to it are
-				 * present, so they must never be removed while it stays. An
-				 * interrupted removal then reads as a directory that was never
-				 * synchronized, which is pulled whole when the index is opened.
-				 */
-				Files.deleteIfExists(path.resolve(LocalCopy.MANIFEST_FILE));
 				deleteRecursively(path);
 				return true;
 			} catch(IOException e) {
@@ -3560,15 +3553,34 @@ public class Indexes implements RegistryPoller.Listener {
 		deleteRecursively(indexRoot.resolve(name));
 	}
 
+	/**
+	 * Remove a directory and everything in it.
+	 *
+	 * <p>Each manifest goes first. A manifest says that the files next to it
+	 * are present, so no file goes while it stays. A removal that stops part
+	 * way then leaves a directory that was never synchronized, and opening the
+	 * index pulls it whole. A manifest left behind would name a commit that is
+	 * gone. A directory without a manifest, such as one in local storage mode,
+	 * is removed in the same way.
+	 */
 	private static void deleteRecursively(Path path) throws IOException {
 		if(!Files.exists(path)) {
 			return;
 		}
 
-		try(var paths = Files.walk(path)) {
-			for(var p : paths.sorted(Comparator.reverseOrder()).toList()) {
+		List<Path> paths;
+		try(var walk = Files.walk(path)) {
+			paths = walk.sorted(Comparator.reverseOrder()).toList();
+		}
+
+		for(var p : paths) {
+			if(p.getFileName().toString().equals(LocalCopy.MANIFEST_FILE)) {
 				Files.deleteIfExists(p);
 			}
+		}
+
+		for(var p : paths) {
+			Files.deleteIfExists(p);
 		}
 	}
 }

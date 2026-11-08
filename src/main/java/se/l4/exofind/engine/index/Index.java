@@ -1339,6 +1339,17 @@ public class Index {
 				if(DirectoryReader.indexExists(directory)) {
 					this.reader = DirectoryReader.open(directory);
 					this.readerWithoutCommit = false;
+				} else if(sync.hasSyncedCommit()) {
+					/*
+					 * The copy that was synchronized holds a commit, so the
+					 * directory lost files. An empty reader here answers
+					 * searches with no hits while the remote holds the
+					 * documents. The index is pulled again instead, and the
+					 * pull downloads the missing files.
+					 */
+					throw new IndexNotFoundException(
+						"The local copy holds no commit, but its manifest names one"
+					);
 				} else {
 					this.reader = new MultiReader();
 					this.readerWithoutCommit = true;
