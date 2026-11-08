@@ -4154,13 +4154,20 @@ public class Index {
 				throw new IndexSourceNotKeptException(id);
 			}
 
-			return SignalValues.withValues(
+			var document = SignalValues.withValues(
 				schema,
 				mergeReader,
 				doc,
 				DocumentSource.decode(source),
 				signals
 			);
+
+			/*
+			 * A field that stopped being a signal under allowStaleDocuments
+			 * holds its value only in the doc values. Without this, a patch of
+			 * another field writes the document again without the value.
+			 */
+			return SignalValues.withFormerSignalValues(schema, mergeReader, doc, document);
 		}
 	}
 

@@ -426,6 +426,41 @@ public class SignalFieldTest extends AbstractIndexTest {
 		assertThat(index.getDocument("quiet").get("views"), is(1200));
 	}
 
+	/**
+	 * A field that stops being a signal with {@code allowStaleDocuments}
+	 * keeps the values the documents hold until they are indexed again in
+	 * full. A patch of another field must not remove the value.
+	 */
+	@Test
+	public void aPatchAfterTheSignalWasTurnedOffKeepsTheValue() throws IOException {
+		// Given
+		var index = catalogue();
+		index.addDocument(
+			new Document(
+				new Document.Value("id", "counted"),
+				new Document.Value("name", "Trail runner"),
+				new Document.Value("views", 1200)
+			)
+		);
+		index.commit();
+
+		var withoutSignal = definition();
+		withoutSignal.putFields(
+			"views",
+			withoutSignal.getFieldsOrThrow("views").toBuilder().clearSignal().build()
+		);
+		index.updateDefinition(withoutSignal.build(), null, true);
+
+		// When
+		assertTrue(index.updateDocument(patch(set("id", "counted"), set("name", "Trail walker"))));
+		index.commit();
+
+		// Then
+		var doc = index.getDocument("counted");
+		assertThat(doc.get("name"), is("Trail walker"));
+		assertThat(doc.get("views"), is(1200));
+	}
+
 	private static SearchResult search(Index index, String text) throws IOException {
 		return index.search(
 			SearchRequest.create()

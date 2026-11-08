@@ -188,6 +188,78 @@ final class SignalValues {
 	}
 
 	/**
+	 * Get a document with the values of former signal fields filled in from
+	 * the doc values of the reader it was read from.
+	 *
+	 * <p>A field that stops being a signal while the index holds documents
+	 * (which only {@code allowStaleDocuments} lets through) leaves those
+	 * documents with the value in the sort doc values and not in their copy.
+	 * A field that was never a signal always writes its value to the copy as
+	 * well. So a field the copy lacks, but the sort doc values hold a number
+	 * for, was a signal when the document was written, and the number is its
+	 * value. Only a field that can be a signal is looked at: one of a type
+	 * {@link se.l4.exofind.engine.index.types.FieldType#isSignalSupported},
+	 * at the root, with one value and no locales.
+	 *
+	 * @param schema
+	 * @param reader
+	 *   the reader the id belongs to
+	 * @param docId
+	 *   Lucene id of the document, across the whole reader, or a negative
+	 *   number when the document was written since the reader was opened.
+	 *   Such a write kept every field in the copy, so nothing is filled in
+	 * @param document
+	 *   the document as decoded from its copy
+	 * @return
+	 * @throws IOException
+	 */
+	static Document withFormerSignalValues(
+		IndexSchema schema,
+		IndexReader reader,
+		int docId,
+		Document document
+	) throws IOException {
+		if(docId < 0) {
+			return document;
+		}
+
+		var leaves = reader.leaves();
+		var leaf = leaves.get(ReaderUtil.subIndex(docId, leaves));
+		var local = docId - leaf.docBase;
+
+		var values = Lists.mutable.of(document.fields());
+		var filled = false;
+
+		for(var field : schema.getFields()) {
+			var name = field.getName();
+			if(field.isSignal()
+				|| !field.getType().isSignalSupported()
+				|| field.nameHasWildcard()
+				|| name.indexOf('.') >= 0
+				|| field.isMultiple()
+				|| field.isLocaleSpecific()
+				|| document.get(name) != null) {
+				continue;
+			}
+
+			var docValues = leaf.reader().getNumericDocValues(
+				FieldNames.name(name, null, FieldNames.SORT)
+			);
+			if(docValues == null || !docValues.advanceExact(local)) {
+				continue;
+			}
+
+			values.add(new Document.Value(
+				name,
+				field.getType().readSignalValue(docValues.longValue())
+			));
+			filled = true;
+		}
+
+		return filled ? new Document(values.toArray(new Document.Value[0])) : document;
+	}
+
+	/**
 	 * Get a value as the stored field a read hands to {@link DocumentReader},
 	 * which reads it back through the type the way it reads any stored
 	 * number.
