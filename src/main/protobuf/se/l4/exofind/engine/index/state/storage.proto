@@ -18,6 +18,14 @@ package se.l4.exofind.engine.index.state;
  * renews. A ManifestFile with new contents, and a Claim that moves to another
  * node, start without them. A field added to these messages must therefore
  * stay true when an older node carries it over such a rewrite.
+ *
+ * A node removes from the remote the objects of an index that no manifest
+ * names. It finds them from the keys that `files` lists. A node does not
+ * run this removal over a Manifest that holds fields it cannot read, at the
+ * top level or on a ManifestFile. Builds up to and including 0.6.1 run it
+ * all the same. So a new field can name objects outside `files` only when
+ * no node of such a build can write the index. When a node stops naming a
+ * ManifestFile, it removes only the object that `key` names.
  */
 
 /*

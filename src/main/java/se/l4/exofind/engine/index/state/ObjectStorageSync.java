@@ -1842,6 +1842,20 @@ public class ObjectStorageSync implements StateSync {
 	 * picked up by a later sweep.
 	 */
 	private void sweepRemoteOrphans(Manifest manifest) {
+		/*
+		 * A newer build can name objects in a field this build cannot read.
+		 * This build carries such a field over when it writes the manifest,
+		 * so the objects stay named, and the sweep cannot tell them from
+		 * orphans. See the header of storage.proto.
+		 */
+		if(carriesUnknownFields(manifest)) {
+			logger.atDebug()
+				.addKeyValue("index", index)
+				.log("Manifest holds fields of a newer version, skipping the sweep");
+
+			return;
+		}
+
 		var referenced = new HashSet<String>();
 		referenced.add(MANIFEST_NAME);
 		// A delete's mark over this generation is not this writer's to remove
@@ -1893,6 +1907,24 @@ public class ObjectStorageSync implements StateSync {
 				.setCause(e)
 				.log("Could not sweep for orphaned remote objects; " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Whether a manifest, or one of the files it names, holds fields that a
+	 * newer version wrote and this build cannot read.
+	 */
+	private static boolean carriesUnknownFields(Manifest manifest) {
+		if(!manifest.getUnknownFields().asMap().isEmpty()) {
+			return true;
+		}
+
+		for(var file : manifest.getFilesList()) {
+			if(!file.getUnknownFields().asMap().isEmpty()) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

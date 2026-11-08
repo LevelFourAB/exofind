@@ -44,6 +44,7 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 
 import com.google.common.hash.Hashing;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.UnknownFieldSet;
 
 import se.l4.exofind.engine.storage.DurableFiles;
@@ -1789,6 +1790,57 @@ public class ObjectStorageSyncTest {
 				.build(),
 			RequestBody.fromBytes(manifest.toByteArray())
 		);
+	}
+
+	/**
+	 * A newer version can name an object in a manifest field this build
+	 * cannot read. A node of this build that takes the manifest over and
+	 * pushes keeps that field, so it must keep the object as well - or
+	 * refuse to write the manifest - rather than sweep away an object that
+	 * the manifest it wrote still names.
+	 */
+	@Test
+	void aSweepKeepsAnObjectAManifestNamesInAFieldThisBuildCannotRead() throws Exception {
+		// Given: a manifest that a newer version wrote, which names an extra object in a field of its own
+		var writer = newSync(s3Client, localPath, Duration.ZERO);
+		var first = createLocalFile("segments_1", 10);
+		push(writer, first);
+
+		var extraKey = "e5-0123456789abcdef/extra.bin";
+		putRemoteObject(extraKey, new byte[] { 1, 2, 3, 4 });
+
+		var current = remoteManifest();
+		writeRemoteManifest(
+			current.toBuilder()
+				.setVersion(current.getVersion() + 1)
+				.setUnknownFields(
+					UnknownFieldSet.newBuilder()
+						.addField(
+							99,
+							UnknownFieldSet.Field.newBuilder()
+								.addLengthDelimited(ByteString.copyFromUtf8(extraKey))
+								.build()
+						)
+						.build()
+				)
+				.build()
+		);
+
+		// When: a node of this build takes the manifest over, pushes and sweeps
+		var other = newSync(s3Client, otherLocalPath, Duration.ZERO);
+		assertThat(other.pull(), is(true));
+		try {
+			other.claimWriter();
+			var second = createLocalFile(otherLocalPath, "segments_2", 12);
+			push(other, first, second);
+			other.sweep();
+		} catch(IOException e) {
+			// Refusing to write over a manifest it can not fully read keeps the object too
+		}
+
+		// Then: the remote manifest still names the extra object, and the object is still there
+		assertThat(remoteManifest().getUnknownFields().hasField(99), is(true));
+		verifyRemoteObject(extraKey);
 	}
 
 	/**
