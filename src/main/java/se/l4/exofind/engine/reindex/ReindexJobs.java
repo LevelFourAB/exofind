@@ -1608,6 +1608,81 @@ public class ReindexJobs {
 				.setCause(e)
 				.log("Could not sweep the reindex records; " + e.getMessage());
 		}
+
+		endUnreadTracking();
+	}
+
+	/**
+	 * End the change logs that no job reads.
+	 *
+	 * <p>A job that ends without a promote ends the log of its source once.
+	 * When the push after that fails, the log stays on the remote, and the
+	 * next writer of the index takes it up when it pulls. Without this, that
+	 * writer records every key it writes into a log that nothing reads, and
+	 * the log grows until a later job of the index ends it.
+	 *
+	 * <p>A job reads the log of a generation when the record of its index
+	 * holds a job that is not finished and copies from that generation. A
+	 * record this version cannot read can hold such a job, so the logs of its
+	 * index are kept. A log that fails to end is tried again on the next
+	 * sweep.
+	 *
+	 * <p>Runs on the scheduler, the same thread as every resume.
+	 * {@link #start} carries a job before it writes its record, and does both
+	 * under {@link #startLock}. The check holds the same lock, so it never
+	 * ends the log of a job that is being started.
+	 */
+	private void endUnreadTracking() {
+		for(var open : indexes.getOpen().entrySet()) {
+			var source = open.getValue();
+			if(source.getChangeLog().isEmpty() || source.isReadOnly()) {
+				continue;
+			}
+
+			var name = IndexName.parse(open.getKey());
+			var index = name.index();
+			if(running.containsKey(index) || !nodeState.isIndexer(index)) {
+				continue;
+			}
+
+			try {
+				startLock.lock();
+				try {
+					if(running.containsKey(index) || isReadByAJob(name)) {
+						continue;
+					}
+
+					source.endChangeTracking();
+				} finally {
+					startLock.unlock();
+				}
+
+				source.commit();
+
+				logger.atInfo()
+					.addKeyValue("index", name.toString())
+					.log("Ended a change log that no reindex reads");
+			} catch(IOException | RuntimeException e) {
+				logger.atLevel(Interruptions.levelOf(e))
+					.addKeyValue("index", name.toString())
+					.setCause(e)
+					.log("Could not end a change log that no reindex reads; " + e.getMessage());
+			}
+		}
+	}
+
+	/**
+	 * Get if the record of an index can hold a job that reads the change log
+	 * of a generation.
+	 */
+	private boolean isReadByAJob(IndexName generation) throws IOException {
+		var stored = storage.read(generation.index()).orElse(null);
+		if(stored == null || ReindexPhase.isFinished(stored.record())) {
+			return false;
+		}
+
+		var job = ReindexJob.fromStore(stored.record()).orElse(null);
+		return job == null || job.source().equals(generation.generation());
 	}
 
 	/**

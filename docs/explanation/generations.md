@@ -111,6 +111,8 @@ Every document write settles which generation it goes to inside that generation'
 
 The change log is stored alongside Lucene files in `changes.ef.bin`, saved on every commit, and pushed with the index manifests, so change tracking survives indexer failover. A node that takes an index over reads the log back when it opens the index for writing and records into it from its first write. What that node accepts is therefore recorded while the job that owns the log is still being resumed on it.
 
+A job that ends without a promote removes the log from the source once. If the push after that fails, the log stays in the remote, and the next writer takes it up again. The reindex sweep, which runs on every indexer candidate, ends such a log. It ends the log of a generation when the job record of the index is missing or finished, or holds a job that copies from another generation. The sweep keeps the log when the record is in a phase that this version does not know, because a newer version can have a job that reads the log. A log that the sweep cannot end is tried again on the next sweep.
+
 ### Tracking requirements
 
 Change tracking requires two index capabilities:

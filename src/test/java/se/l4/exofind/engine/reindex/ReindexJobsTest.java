@@ -141,6 +141,15 @@ public class ReindexJobsTest {
 	}
 
 	private ReindexJobs newJobs(Indexes indexes, String node, int maxConcurrent) {
+		return newJobs(indexes, node, maxConcurrent, Duration.ofMinutes(5));
+	}
+
+	private ReindexJobs newJobs(
+		Indexes indexes,
+		String node,
+		int maxConcurrent,
+		Duration sweepInterval
+	) {
 		var ownership = new LocalIndexerOwnership();
 		ownership.start((index, owner) -> {
 		});
@@ -153,7 +162,7 @@ public class ReindexJobsTest {
 			storage,
 			ownership,
 			maxConcurrent,
-			Duration.ofMinutes(5),
+			sweepInterval,
 			Duration.ofMinutes(5)
 		);
 	}
@@ -737,6 +746,75 @@ public class ReindexJobsTest {
 	}
 
 	/**
+	 * A job that ends without a promote ends the log of its source once. When
+	 * that push fails, the log stays on the remote and the next writer takes
+	 * it up. With no record of a job, nothing reads the log, and the sweep
+	 * ends it.
+	 */
+	@Test
+	public void aChangeLogThatNoJobReadsIsEndedByTheSweep() throws Exception {
+		// Given
+		var source = catalogue();
+		source.beginChangeTracking();
+		source.addDocument(doc("4", "Cloudberry jam", "preserves"));
+		source.commit();
+
+		// When
+		jobs.stop();
+		jobs = newJobs(indexes, "node-a", 2, Duration.ofMillis(50));
+		jobs.onStart(null);
+
+		// Then
+		await(() -> source.getChangeLog().isEmpty());
+		await(() -> !Files.exists(storageDirectory.resolve("catalogue@1").resolve(Index.CHANGES_FILE)));
+	}
+
+	/**
+	 * A finished job reads no log, so a log left on its source is ended by the
+	 * sweep.
+	 */
+	@Test
+	public void aChangeLogOfAFinishedJobIsEndedByTheSweep() throws Exception {
+		// Given
+		var source = catalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		source.beginChangeTracking();
+		source.commit();
+		writeRecord(ReindexPhaseStore.REINDEX_PHASE_FAILED);
+
+		// When
+		jobs.stop();
+		jobs = newJobs(indexes, "node-a", 2, Duration.ofMillis(50));
+		jobs.onStart(null);
+
+		// Then
+		await(() -> source.getChangeLog().isEmpty());
+	}
+
+	/**
+	 * A record in a phase this version does not know may hold a job that
+	 * reads the log, so the sweep leaves the log alone.
+	 */
+	@Test
+	public void aChangeLogUnderARecordOfANewerVersionIsKept() throws Exception {
+		// Given
+		var source = catalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		source.beginChangeTracking();
+		source.commit();
+		writeRecord(null);
+
+		// When
+		jobs.stop();
+		jobs = newJobs(indexes, "node-a", 2, Duration.ofMillis(50));
+		jobs.onStart(null);
+		Thread.sleep(500);
+
+		// Then
+		assertTrue(source.getChangeLog().isPresent());
+	}
+
+	/**
 	 * A job whose target is gone cannot be resumed and is closed as failed.
 	 * Closing it must also stop the source recording changes for it, or the
 	 * log grows with every write until some later job ends it.
@@ -1307,6 +1385,33 @@ public class ReindexJobsTest {
 			).toStore(),
 			null
 		);
+	}
+
+	/**
+	 * Write the record of a job from generation 1 into generation 2.
+	 *
+	 * @param phase
+	 *   the phase of the job, or {@code null} for a phase this version does
+	 *   not know
+	 */
+	private void writeRecord(ReindexPhaseStore phase) throws IOException {
+		var registered = registry.get("catalogue").orElseThrow();
+		var now = Instant.now();
+		var record = new ReindexJob(
+			"job-1", "catalogue", "2", "1",
+			ReindexPhase.COPYING,
+			null, 0, 3, 0, null, false, "tester", "node-b", now, now, null,
+			registered.generation("1").orElseThrow().createdAt(),
+			registered.generation("2").orElseThrow().createdAt()
+		).toStore().toBuilder();
+
+		if(phase == null) {
+			record.setPhaseValue(99);
+		} else {
+			record.setPhase(phase);
+		}
+
+		storage.write("catalogue", record.build(), null);
 	}
 
 	private void awaitFinished(String index) throws Exception {
