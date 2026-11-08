@@ -136,7 +136,7 @@ When a push replaces the manifest, the writer records the objects the new manife
 
 A periodic listing sweep removes unreferenced objects that a push did not clean up. The sweep skips objects younger than the grace period. The sweep also skips objects the writer stopped naming less than a grace period ago, regardless of upload age.
 
-The recorded list lives in memory, so a writer that stops loses it. The sweep of the next writer measures the age of those objects from their upload. A writer restart during a long pull therefore lets that sweep remove an object the reader is still downloading.
+The recorded list lives in memory, so a writer that stops loses it. The next writer cannot know which objects an earlier writer stopped naming, or when. It knows only that this happened before it read the manifest it starts from. So for one grace period after a writer reads a manifest that it did not write, from its disk at start or from a pull, its sweep removes nothing.
 
 A failed pull keeps the files it verified. The retry compares size and checksum against the manifest and downloads only what is missing or differs. The pull always downloads an entry without a checksum, because a file with the same name and size that a writer on the node left behind would otherwise pass.
 

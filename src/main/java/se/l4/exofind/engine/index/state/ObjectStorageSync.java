@@ -142,10 +142,21 @@ public class ObjectStorageSync implements StateSync {
 	 * be removed.
 	 *
 	 * <p>Held in memory only. An instance that stops with entries here leaves
-	 * them for the sweep, which measures the age of an object from its
-	 * upload and may remove it earlier than the hold would have.
+	 * them to the next instance, which holds them through
+	 * {@link #adoptedAtNanos}.
 	 */
 	private final Map<String, Long> pendingRemoteDeletes;
+
+	/**
+	 * {@link System#nanoTime()} of the last time this instance took a
+	 * manifest it did not write as the one it is synchronized at: the
+	 * manifest on disk when the instance was made, and every manifest a pull
+	 * adopts. The instance does not know which objects the writers of that
+	 * manifest and of the manifests before it stopped naming, or when. Every
+	 * one of them was unnamed at this time or earlier, so the sweep holds
+	 * every object for the grace period from this time.
+	 */
+	private long adoptedAtNanos;
 
 	private final Duration grace;
 
@@ -311,6 +322,7 @@ public class ObjectStorageSync implements StateSync {
 		this.pendingRemoteDeletes = new LinkedHashMap<>();
 
 		this.lastSyncedManifest = loadFromDisk();
+		this.adoptedAtNanos = System.nanoTime();
 		this.lastSyncedManifestETag = null;
 		this.sessionEpoch = -1;
 		this.sessionId = newSessionId();
@@ -472,9 +484,18 @@ public class ObjectStorageSync implements StateSync {
 			 * behind.
 			 */
 			manifest = putManifest(manifest);
-			recordAccepted(manifest);
+			try {
+				recordAccepted(manifest);
+			} finally {
+				/*
+				 * The remote holds the new manifest also when the local write
+				 * failed, so the objects it stopped naming are held from now.
+				 * Without the hold, the sweep measures their age from the
+				 * upload and can remove one that a reader is downloading.
+				 */
+				deleteObsoleteRemoteObjects(baseline, manifest);
+			}
 
-			deleteObsoleteRemoteObjects(baseline, manifest);
 			maybeSweepRemote(manifest);
 		} finally {
 			lock.unlock();
@@ -798,6 +819,7 @@ public class ObjectStorageSync implements StateSync {
 			 */
 			writeManifest(manifest);
 			this.lastSyncedManifest = manifest;
+			this.adoptedAtNanos = System.nanoTime();
 			this.lastSyncedManifestETag = quoteETag(pulled.eTag());
 			this.localManifestBehind = false;
 			this.repairLocalCopy = false;
@@ -1697,7 +1719,9 @@ public class ObjectStorageSync implements StateSync {
 	 * may belong to a push that is still underway. An object a push of this
 	 * instance stopped naming is left alone for the same period from that
 	 * push, however old its upload is: a reader may be downloading it, and
-	 * the age of the upload says nothing about that.
+	 * the age of the upload says nothing about that. Every object is also left
+	 * alone for the same period from {@link #adoptedAtNanos}, as a writer
+	 * before this instance may have stopped naming it up to then.
 	 *
 	 * <p>Failures are not fatal, whatever could not be listed or removed is
 	 * picked up by a later sweep.
@@ -1733,6 +1757,10 @@ public class ObjectStorageSync implements StateSync {
 
 				var unnamedAt = pendingRemoteDeletes.get(key);
 				if(unnamedAt != null && isHeld(unnamedAt, now)) {
+					continue;
+				}
+
+				if(isHeld(adoptedAtNanos, now)) {
 					continue;
 				}
 

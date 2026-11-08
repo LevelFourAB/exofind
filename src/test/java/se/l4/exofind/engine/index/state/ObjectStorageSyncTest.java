@@ -975,6 +975,62 @@ public class ObjectStorageSyncTest {
 	}
 
 	/**
+	 * A successor of the writer, or the writer after a restart, does not
+	 * know which objects the previous instance stopped naming moments ago.
+	 * Its sweep must still leave such an object for one grace period after
+	 * the manifest that stopped naming it, so that a reader that is
+	 * downloading the previous manifest can finish.
+	 */
+	@Test
+	void aSweepOfANewInstanceKeepsAnObjectAReaderIsStillDownloading() throws Exception {
+		var grace = Duration.ofSeconds(3);
+
+		// Given: a writer pushed a data file long enough ago that its upload is older than the grace
+		var writer = newSync(s3Client, localPath, grace);
+		var successor = newSync(s3Client, localPath, grace);
+		var segment1 = createLocalFile("segments_1", 10);
+		var d1 = createLocalFile("data", 100);
+		push(writer, segment1, d1);
+
+		var d1Key = remoteKeyOf(d1.name);
+		var d1Object = bucketPrefix + "/" + d1Key;
+		Thread.sleep(grace.toMillis() + 500);
+
+		/*
+		 * While a reader downloads the data file, the writer pushes a commit
+		 * that no longer names it, and a new instance over the same directory
+		 * - the writer after a restart - sweeps.
+		 */
+		var segment2 = createLocalFile("segments_2", 10);
+		var d2 = createLocalFile("data2", 50);
+		var readingClient = Mockito.spy(s3Client);
+		Mockito.doAnswer(invocation -> {
+			push(writer, segment1, segment2, d2);
+			successor.pull();
+			successor.sweep();
+			return invocation.callRealMethod();
+		})
+			.when(readingClient)
+			.getObject(ArgumentMatchers.argThat(
+				(GetObjectRequest request) -> request != null && d1Object.equals(request.key())
+			));
+
+		// When: the reader pulls the manifest that names the data file
+		var reader = newSync(readingClient, otherLocalPath);
+
+		IOException failure = null;
+		try {
+			reader.pull();
+		} catch(IOException e) {
+			failure = e;
+		}
+
+		// Then: the pull completes with the data file
+		assertThat("failure of the pull", failure, is((IOException) null));
+		verifyLocalFile(otherLocalPath, d1);
+	}
+
+	/**
 	 * A pull that fails part way leaves the files it verified in place, and
 	 * the next attempt keeps them instead of downloading them again. The
 	 * last synced manifest does not name them, so it is the size and the
