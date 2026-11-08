@@ -2140,30 +2140,56 @@ public class ObjectStorageIndexerOwnership implements IndexerOwnership {
 				return null;
 			}
 
-			throw new IOException("Unable to write indexer leadership; " + e.getMessage(), e);
+			/*
+			 * A server error does not say that the write was refused. A proxy
+			 * in front of the storage answers 504 when it stops waiting, and
+			 * the storage can finish the write after that.
+			 */
+			return resolveUnanswered(table, expectedETag, e);
 		} catch(Exception e) {
 			/*
-			 * The storage may drop the connection while refusing a
-			 * conditional write, which arrives as a connection failure
-			 * rather than the refusal. Read the table back to tell what
-			 * actually happened: exactly what was written means the write
-			 * went through, a different table under a different tag means it
-			 * was refused, and the tag this node conditioned on means the
-			 * write never arrived and can be tried again.
+			 * The storage may drop the connection after it has taken the
+			 * write, or while it refuses a conditional write. Either arrives
+			 * as a connection failure and not as the answer.
 			 */
-			var current = tryFetchTable();
-			if(current != null) {
-				if(current.table().equals(table)) {
-					return current.eTag();
-				}
+			return resolveUnanswered(table, expectedETag, e);
+		}
+	}
 
-				if(!Objects.equals(current.eTag(), expectedETag)) {
-					return null;
-				}
+	/**
+	 * Read the table back to find out what became of a write whose answer
+	 * does not tell. Exactly what was written means the write went through.
+	 * A different table under a different tag means another node wrote
+	 * first. The tag the write was conditioned on means the write never
+	 * arrived and can be tried again.
+	 *
+	 * <p>Without this a round whose write landed counts as failed. The node
+	 * then does not move its lease forward, and can give up indexes whose
+	 * claims the storage holds as renewed.
+	 *
+	 * @return
+	 *   the tag the written table is served under, or {@code null} when
+	 *   another node changed the table first
+	 * @throws IOException
+	 *   if the write did not arrive, or the table could not be read back
+	 */
+	private String resolveUnanswered(
+		IndexerLeadership table,
+		String expectedETag,
+		Exception failure
+	) throws IOException {
+		var current = tryFetchTable();
+		if(current != null) {
+			if(current.table().equals(table)) {
+				return current.eTag();
 			}
 
-			throw new IOException("Unable to write indexer leadership; " + e.getMessage(), e);
+			if(!Objects.equals(current.eTag(), expectedETag)) {
+				return null;
+			}
 		}
+
+		throw new IOException("Unable to write indexer leadership; " + failure.getMessage(), failure);
 	}
 
 	/**

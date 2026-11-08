@@ -41,6 +41,7 @@ import software.amazon.awssdk.core.interceptor.Context;
 import software.amazon.awssdk.core.interceptor.ExecutionAttributes;
 import software.amazon.awssdk.core.interceptor.ExecutionInterceptor;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -660,6 +661,105 @@ public class ObjectStorageIndexerOwnershipTest {
 
 		assertThat(revoked.contains("books"), is(true));
 		assertThat(owned.contains("books"), is(false));
+	}
+
+	/**
+	 * A gateway or an overloaded storage can apply a write of the table and
+	 * still answer it with a server error. The renewals of the holder then
+	 * land, and the stored claims stay its own. The holder must not take
+	 * those rounds for failed ones and give its indexes up, which drops the
+	 * documents they acknowledged and did not push yet.
+	 */
+	@Test
+	void writesOfTheTableThatLandAndAreAnsweredWithAServerErrorKeepTheIndexes() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		// Given: a candidate that holds "books"
+		var faults = new LandedTableWritesAnsweredWithServerErrors();
+		var holder = newFaultyOwnership("a", faults);
+		Set<String> revoked = ConcurrentHashMap.newKeySet();
+		var owned = start(holder, revoked);
+		await(() -> owned.contains("books"), "the candidate to take the index");
+		awaitRenewal("books");
+
+		// When: its next writes of the table land and are answered with 504, for more than a lease
+		var expiryBefore = expiryOf("books");
+		faults.on.set(true);
+		var rounds = (int) (LEASE.toMillis() / (LEASE.toMillis() / 3)) + 2;
+		await(() -> faults.answered.get() >= rounds, rounds + " writes of the table answered with 504");
+
+		// Then: the writes landed, so the stored claim is still the candidate's, renewed
+		var claim = readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("books"))
+			.findFirst()
+			.orElseThrow();
+		assertThat(claim.getNode(), is("a"));
+		assertThat("the claim was renewed by the writes", claim.getExpiresAt() > expiryBefore, is(true));
+
+		// And: the candidate did not give the index up
+		assertThat("books was revoked", revoked.contains("books"), is(false));
+		assertThat(owned.contains("books"), is(true));
+	}
+
+	/**
+	 * A claim of a free index for a write that lands and is answered with a
+	 * server error is still a claim of this node. Refusing the write then
+	 * leaves the index held here and written by nobody.
+	 */
+	@Test
+	void aClaimThatLandsAndIsAnsweredWithAServerErrorIsTaken() throws Exception {
+		names.set(Sets.immutable.of("books"));
+
+		// Given: a candidate that holds "books"
+		var faults = new LandedTableWritesAnsweredWithServerErrors();
+		var holder = newFaultyOwnership("a", faults);
+		var owned = start(holder);
+		await(() -> owned.contains("books"), "the candidate to take the index");
+
+		// When: a write for a free index makes it claim, and the claim lands and is answered with 504
+		faults.on.set(true);
+		var claimed = holder.tryClaim("films");
+		faults.on.set(false);
+
+		// Then: the stored table names the candidate, and the claim is answered as taken
+		var heldBy = readTable().getClaimsList().stream()
+			.filter(c -> c.getIndex().equals("films"))
+			.findFirst()
+			.map(IndexerLeadership.Claim::getNode)
+			.orElse(null);
+		assertThat(heldBy, is("a"));
+		assertThat("the claim was answered as taken", claimed, is(true));
+	}
+
+	/**
+	 * Lets writes of the leadership table reach the storage while {@link #on}
+	 * is set, and turns their answer into a 504. This stands in for a gateway
+	 * that times out after the storage applied the write.
+	 */
+	static final class LandedTableWritesAnsweredWithServerErrors implements ExecutionInterceptor {
+		final AtomicBoolean on = new AtomicBoolean();
+		final AtomicInteger answered = new AtomicInteger();
+
+		@Override
+		public SdkHttpResponse modifyHttpResponse(
+			Context.ModifyHttpResponse context,
+			ExecutionAttributes attributes
+		) {
+			if(
+				!on.get()
+					|| !(context.request() instanceof PutObjectRequest put)
+					|| !put.key().endsWith("indexer-leadership.ef.bin")
+					|| !context.httpResponse().isSuccessful()
+			) {
+				return context.httpResponse();
+			}
+
+			answered.incrementAndGet();
+			return context.httpResponse().toBuilder()
+				.statusCode(504)
+				.statusText("Gateway Timeout")
+				.build();
+		}
 	}
 
 	/**
