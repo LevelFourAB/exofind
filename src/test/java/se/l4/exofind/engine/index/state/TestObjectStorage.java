@@ -16,6 +16,7 @@ import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
@@ -127,6 +128,14 @@ public final class TestObjectStorage {
 			} catch(NoSuchBucketException e) {
 				try {
 					created.createBucket(CreateBucketRequest.builder().bucket(BUCKET).build());
+				} catch(BucketAlreadyOwnedByYouException e2) {
+					/*
+					 * Each class loader has its own copy of this class, with
+					 * its own lock, and all copies share one container. Two
+					 * copies can both find no bucket and both create it. The
+					 * copy that is second gets this answer, and the bucket is
+					 * there.
+					 */
 				} catch(Exception e2) {
 					throw new IllegalStateException("Could not create the test bucket", e2);
 				}
