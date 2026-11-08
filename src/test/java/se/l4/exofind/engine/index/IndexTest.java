@@ -20,6 +20,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.lucene.util.Version;
 import org.junit.jupiter.api.AfterEach;
@@ -916,6 +917,42 @@ public class IndexTest {
 		}
 
 		// Then: nothing was pushed on the claim made before the loss
+		assertThat("pushes made without a claim after the loss", sync.pushesOnOldClaim.get(), is(0));
+	}
+
+	/**
+	 * The node loses an index while an instance of it is still being opened,
+	 * so the revocation does not reach the instance. The instance follows the
+	 * revocations of its index, and does not push on the claim it made before
+	 * the loss.
+	 */
+	@Test
+	public void anInstanceTheRevocationMissedDoesNotPushOnItsOldClaim() throws Exception {
+		var state = nodeState(true);
+		var path = indexRoot.resolve("test");
+		Files.createDirectories(path);
+
+		// Given: an instance that follows the revocations of its index
+		var sync = new ClaimHoldingSync();
+		var index = new Index(state, "test", path, sync);
+		indexes.add(index);
+		var revocations = new AtomicLong();
+		index.followRevocations(revocations::get);
+		index.pull();
+		index.updateDefinition(oneBooleanField());
+
+		// When: the index is revoked without the instance being told
+		revocations.incrementAndGet();
+		sync.lost.set(true);
+
+		try {
+			index.addDocument(new Document(new Document.Value("field1", true)));
+			index.commit();
+		} catch(IndexReadonlyException | IndexOutOfDateException e) {
+			// Refusing the write is one way not to push on the old claim
+		}
+
+		// Then
 		assertThat("pushes made without a claim after the loss", sync.pushesOnOldClaim.get(), is(0));
 	}
 

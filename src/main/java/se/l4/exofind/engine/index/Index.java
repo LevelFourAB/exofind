@@ -34,6 +34,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -537,6 +538,18 @@ public class Index {
 	 * pull does not let {@link #mayPush} stand on that claim.
 	 */
 	private final AtomicLong revocations = new AtomicLong();
+
+	/**
+	 * How many times the owner of this instance revoked the index, see
+	 * {@link #followRevocations(LongSupplier)}. Counts nothing until set.
+	 */
+	private volatile LongSupplier ownerRevocations = () -> 0;
+
+	/**
+	 * The {@link #revocationCount()} when the writer claimed the index. While
+	 * the count stays the same, no revocation has happened since the claim.
+	 */
+	private volatile long claimRevocations;
 
 	private final IndexSearcherManager searcherManager;
 
@@ -1086,7 +1099,7 @@ public class Index {
 				return;
 			}
 
-			if(writer != null && mayPush && state != IndexState.NEEDS_PULL) {
+			if(writer != null && mayPush() && state != IndexState.NEEDS_PULL) {
 				/*
 				 * The node handed the index over by choice, and the flush of
 				 * the handover has not run yet. The node state already says
@@ -1116,7 +1129,7 @@ public class Index {
 				 * remote, and a reader opens the newest local commit. Given
 				 * up here, and the pull below puts back what the remote holds.
 				 */
-				var revoked = !mayPush;
+				var revoked = !mayPush();
 				releaseWriter();
 				if(revoked) {
 					sync.dropUnpushedChanges();
@@ -1453,9 +1466,9 @@ public class Index {
 					 * again for a node that holds the index, as a successor can
 					 * have written in between.
 					 */
-					revocationsAtClaim = revocations.get();
+					revocationsAtClaim = revocationCount();
 					sync.claimWriter();
-				} while(revocations.get() != revocationsAtClaim && !isReadOnly());
+				} while(revocationCount() != revocationsAtClaim && !isReadOnly());
 
 				this.writer = new IndexWriter(directory, config);
 				this.reader = DirectoryReader.open(writer);
@@ -1469,8 +1482,9 @@ public class Index {
 				 * and a revoke that lands between a read and the write would be
 				 * overwritten.
 				 */
+				this.claimRevocations = revocationsAtClaim;
 				this.mayPush = true;
-				if(revocations.get() != revocationsAtClaim) {
+				if(revocationCount() != revocationsAtClaim) {
 					this.mayPush = false;
 				}
 			}
@@ -1739,7 +1753,7 @@ public class Index {
 			 * below drops that commit.
 			 */
 			flush = flushFirst
-				&& mayPush
+				&& mayPush()
 				&& writer != null
 				&& !shouldWrite
 				&& (state != IndexState.USABLE || LocalCopy.hasUnpushedChanges(localPath));
@@ -1787,7 +1801,7 @@ public class Index {
 								+ " pushed for a handover, handing the index over with"
 								+ " what the remote holds; " + e.getMessage()
 						);
-				} else if(mayPush) {
+				} else if(mayPush()) {
 					/*
 					 * The successor pulls what the remote holds, so pulling
 					 * here would drop the documents this instance answered for
@@ -1868,7 +1882,7 @@ public class Index {
 			return false;
 		}
 
-		return !shouldWrite || mayPush;
+		return !shouldWrite || mayPush();
 	}
 
 	/**
@@ -1891,6 +1905,45 @@ public class Index {
 	}
 
 	/**
+	 * Count the revocations of the index that the owner of this instance
+	 * makes as revocations of this instance.
+	 *
+	 * <p>The owner revokes the instances it can find, see
+	 * {@link #revokeWriting()}. An instance that is still being opened is
+	 * not one of them, and a revocation that arrives then does not reach it.
+	 * An instance that follows the count of its owner sees such a revocation
+	 * anyway: it does not push on a claim that it made before the count
+	 * changed. The next reopen claims the writer again.
+	 *
+	 * <p>Called before the first pull, as the claim of the writer reads the
+	 * count.
+	 *
+	 * @param count
+	 *   how many times the owner revoked the index so far; only the changes
+	 *   of the value count
+	 */
+	public void followRevocations(LongSupplier count) {
+		this.ownerRevocations = count;
+	}
+
+	/**
+	 * Get how many revocations this instance has seen, from either
+	 * {@link #revokeWriting()} or its owner.
+	 */
+	private long revocationCount() {
+		return revocations.get() + ownerRevocations.getAsLong();
+	}
+
+	/**
+	 * Get whether what this instance holds may still be pushed, see
+	 * {@link #mayPush}. A revocation that did not reach this instance, but
+	 * that the count of its owner shows, also clears it.
+	 */
+	private boolean mayPush() {
+		return mayPush && revocationCount() == claimRevocations;
+	}
+
+	/**
 	 * Remove remote objects that no manifest names anymore, for a generation
 	 * that receives no writes and so never pushes.
 	 *
@@ -1905,7 +1958,7 @@ public class Index {
 	 *   if the remote could not be asked whether the sweep may run
 	 */
 	public void sweepRemote() throws IOException {
-		if(!mayPush) {
+		if(!mayPush()) {
 			return;
 		}
 
@@ -1991,7 +2044,7 @@ public class Index {
 			 * handed over, which is exactly when a successor may already have
 			 * written what this push would replace.
 			 */
-			if(!mayPush) {
+			if(!mayPush()) {
 				throw new IndexReadonlyException(id);
 			}
 
@@ -2762,7 +2815,7 @@ public class Index {
 			throw new IndexOutOfDateException(id, state);
 		}
 
-		if(!mayPush) {
+		if(!mayPush()) {
 			/*
 			 * The claim of this writer was revoked, and the node took the
 			 * index back before the reopen that replaces the writer has run.
@@ -9538,7 +9591,7 @@ public class Index {
 		 * the directory go.
 		 */
 		IOException failed = null;
-		if(commit && mayPush) {
+		if(commit && mayPush()) {
 			try {
 				this.commitChanges(PushReason.HANDOVER);
 			} catch(IOException | RuntimeException e) {
@@ -9578,7 +9631,7 @@ public class Index {
 				}
 
 				if(this.writer != null) {
-					if(commit && mayPush) {
+					if(commit && mayPush()) {
 						/*
 						 * Writes are refused from the start of the close, so
 						 * the commit above holds every acknowledged change.

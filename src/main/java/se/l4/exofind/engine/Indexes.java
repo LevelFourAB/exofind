@@ -187,13 +187,15 @@ public class Indexes implements RegistryPoller.Listener {
 	private final LoadingCache<String, Index> indexes;
 
 	/**
-	 * How many times the node lost an index without handing it over, counted
-	 * over every index. A generation that is being opened is not in
-	 * {@link #indexes} yet, so a revoke does not reach it. The open reads the
-	 * count before it pulls and again after, see
+	 * How many times the node lost each index without handing it over, by
+	 * index name. A generation that is being opened is not in
+	 * {@link #indexes} yet, so a revoke does not reach it. Every instance
+	 * follows the count of its index, see
+	 * {@link Index#followRevocations(java.util.function.LongSupplier)}, and
+	 * the open reads the count before it pulls and again after, see
 	 * {@link #loadIndex(String, String)}.
 	 */
-	private final AtomicLong revocations = new AtomicLong();
+	private final ConcurrentHashMap<String, AtomicLong> revocations = new ConcurrentHashMap<>();
 
 	/**
 	 * Lock held while the set of indexes is changed, so that two callers do
@@ -848,6 +850,17 @@ public class Indexes implements RegistryPoller.Listener {
 	}
 
 	/**
+	 * Get how many times the node lost an index without handing it over, see
+	 * {@link #revocations}.
+	 *
+	 * @param name
+	 *   name of the index, without a generation
+	 */
+	private AtomicLong revocationsOf(String name) {
+		return revocations.computeIfAbsent(name, n -> new AtomicLong());
+	}
+
+	/**
 	 * Stop every generation of an index from pushing what it holds, because
 	 * the node lost the index without choosing to hand it over. Covers the
 	 * instances that are closing as well, which push while they do.
@@ -857,7 +870,7 @@ public class Indexes implements RegistryPoller.Listener {
 	 */
 	private void revokeWriting(String name) {
 		// Counted first, so that an open that is still pulling sees the count
-		revocations.incrementAndGet();
+		revocationsOf(name).incrementAndGet();
 
 		for(var entry : indexes.asMap().entrySet()) {
 			if(IndexName.parse(entry.getKey()).index().equals(name)) {
@@ -2435,7 +2448,8 @@ public class Indexes implements RegistryPoller.Listener {
 				recordOpened(index, dataPath);
 			}
 
-			var revocationsAtOpen = revocations.get();
+			var revocationCount = revocationsOf(parsed.index());
+			var revocationsAtOpen = revocationCount.get();
 
 			var loaded = new Index(
 				nodeState,
@@ -2459,6 +2473,8 @@ public class Indexes implements RegistryPoller.Listener {
 			 * instance opened was created, so that it is dropped rather than
 			 * raise the hint of a generation created again under the name.
 			 */
+			loaded.followRevocations(revocationCount::get);
+
 			loaded.onPushed(version -> registryHints.reportManifest(
 				parsed.index(),
 				parsed.generation(),
@@ -2480,15 +2496,17 @@ public class Indexes implements RegistryPoller.Listener {
 			 */
 			metrics.recordIndexOpen(source);
 
-			if(revocations.get() != revocationsAtOpen) {
+			if(revocationCount.get() != revocationsAtOpen) {
 				/*
-				 * The node lost an index while this generation was pulled. The
-				 * loss may be of this index, and the claim of its writer may
-				 * be the one that was taken. The revoke and the reopen it
-				 * queued did not reach this instance, so both are done here.
-				 * The reopen opens a writer on a fresh claim if the node holds
-				 * the index again. Asked last, as the instance is in no map
-				 * until this method returns.
+				 * The node lost this index while this generation was pulled,
+				 * and the claim of its writer may be the one that was taken.
+				 * The revoke and the reopen it queued did not reach this
+				 * instance, so both are done here. The reopen opens a writer
+				 * on a fresh claim if the node holds the index again. Asked
+				 * last, as the instance is in no map until this method
+				 * returns. A revoke after this point does not reach the
+				 * instance either, but the instance follows the count and
+				 * does not push on its old claim.
 				 */
 				loaded.revokeWriting();
 				loaded.reopen(false);
