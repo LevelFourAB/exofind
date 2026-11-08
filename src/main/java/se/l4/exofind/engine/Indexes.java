@@ -2033,16 +2033,40 @@ public class Indexes implements RegistryPoller.Listener {
 				indexes.invalidate(name);
 			}
 
-			// A retired instance would write into the files being removed
-			drainRetiring(name, false);
+			/*
+			 * An open holds this lock for the open and the pull. The registry
+			 * named the generation when that open started, so a create on
+			 * another node has made the name again, and the copy is in use.
+			 * The cache is not changed while the lock is held: an open in
+			 * flight holds its cache entry while it waits for the lock.
+			 */
+			var lock = nameLock(name);
+			if(!lock.tryLock()) {
+				logger.atInfo()
+					.addKeyValue("index", name)
+					.log("Index is being opened again, keeping its local copy");
+				return;
+			}
 
 			try {
+				if((parsed != null && registry.names(parsed)) || indexes.getIfPresent(name) != null) {
+					logger.atInfo()
+						.addKeyValue("index", name)
+						.log("Index was created again, keeping its local copy");
+					return;
+				}
+
+				// A retired instance would write into the files being removed
+				drainRetiring(name, false);
+
 				deleteRecursively(indexRoot.resolve(name));
 			} catch(IOException e) {
 				logger.atWarn()
 					.addKeyValue("index", name)
 					.setCause(e)
 					.log("Could not remove the local files of the index; " + e.getMessage());
+			} finally {
+				lock.unlock();
 			}
 		} finally {
 			lifecycleLock.unlock();
