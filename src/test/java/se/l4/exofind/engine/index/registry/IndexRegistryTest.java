@@ -475,7 +475,7 @@ public class IndexRegistryTest {
 	public void testRemovingARegistrationTakesTheIndexOut() {
 		var created = registry.create("books", "1");
 
-		assertThat(registry.removeCreated("books", created.createdAt()), is(true));
+		assertThat(registry.removeCreated(created), is(true));
 		assertThat(storedNames(storage.stored()), emptyIterable());
 	}
 
@@ -492,7 +492,7 @@ public class IndexRegistryTest {
 		Thread.sleep(2);
 		other.create("books", "1");
 
-		assertThat(registry.removeCreated("books", created.createdAt()), is(false));
+		assertThat(registry.removeCreated(created), is(false));
 		assertThat(storedNames(storage.stored()), contains("books"));
 	}
 
@@ -507,8 +507,70 @@ public class IndexRegistryTest {
 		var other = new IndexRegistry(storage, Duration.ofMinutes(5));
 		other.remove("books");
 
-		assertThat(registry.removeCreated("books", created.createdAt()), is(false));
+		assertThat(registry.removeCreated(created), is(false));
 		assertThat(storedNames(storage.stored()), emptyIterable());
+	}
+
+	/**
+	 * Two registrations of one name can carry the same millisecond. The
+	 * registration identifier tells them apart.
+	 */
+	@Test
+	public void testRemovingARegistrationLeavesALaterOneWithTheSameTime() {
+		var created = registry.create("books", "1");
+
+		var other = new IndexRegistry(storage, Duration.ofMinutes(5));
+		other.remove("books");
+		other.create("books", "1");
+
+		var store = storage.stored().toBuilder();
+		store.setIndexes(0, store.getIndexes(0).toBuilder()
+			.setCreatedAt(created.createdAt().toEpochMilli()));
+		storage.set(store.build());
+
+		assertThat(registry.removeCreated(created), is(false));
+		assertThat(storedNames(storage.stored()), contains("books"));
+	}
+
+	/**
+	 * An entry from a node without registration identifiers is identified by
+	 * its creation time.
+	 */
+	@Test
+	public void testRemovingARegistrationWithoutIdentifierComparesTheTime() {
+		storage.set(IndexRegistryStore.newBuilder()
+			.addIndexes(IndexEntry.newBuilder()
+				.setName("books")
+				.setCreatedAt(1_000L)
+				.setLive("1")
+				.addGenerations(GenerationEntry.newBuilder().setName("1").setCreatedAt(1_000L)))
+			.build());
+		registry.refresh();
+
+		var registered = registry.get("books").orElseThrow();
+
+		assertThat(registry.removeCreated(registered), is(true));
+		assertThat(storedNames(storage.stored()), emptyIterable());
+	}
+
+	/**
+	 * Every write after the create keeps the registration identifiers, so a
+	 * create can still find its own registration later.
+	 */
+	@Test
+	public void testRegistrationIdentifiersAreKeptByLaterWrites() {
+		var created = registry.create("books", "1");
+		registry.addGeneration("books", "2");
+		registry.promote("books", "2");
+
+		var entry = storage.stored().getIndexes(0);
+		assertThat(entry.getRegistrationId(), is(created.registration()));
+		assertThat(
+			entry.getGenerations(0).getRegistrationId(),
+			is(created.generation("1").orElseThrow().registration())
+		);
+		assertThat(entry.getGenerations(1).hasRegistrationId(), is(true));
+		assertThat(registry.removeCreated(created), is(true));
 	}
 
 	/**

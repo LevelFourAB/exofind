@@ -91,6 +91,24 @@ message IndexEntry {
 	 * an older node dropping it when it rewrites an entry is harmless.
 	 */
 	optional string settings_version = 6;
+
+	/*
+	 * Random identifier of this registration of the index, as a string. A
+	 * create writes a new one. Every other write keeps it.
+	 *
+	 * Two registrations of one name can carry the same created_at: the
+	 * clocks of two nodes are not one clock, and one node can delete and
+	 * create a name within a millisecond. A node that takes back its own
+	 * registration compares this identifier, so it does not remove a later
+	 * registration of the name by another node.
+	 *
+	 * Unset in an entry that a node from before the identifier wrote, or that
+	 * a registry repair added. Then created_at identifies the registration.
+	 * An entry with the identifier and an entry without it are different
+	 * registrations. A node without the field keeps it as an unknown field
+	 * when it rewrites the entry, so it needs no name in required_features.
+	 */
+	optional string registration_id = 7;
 }
 
 /*
@@ -125,4 +143,10 @@ message GenerationEntry {
 	 * reporting around a handover then cannot leave the smaller one standing.
 	 */
 	optional int64 manifest_version = 3;
+
+	/*
+	 * Random identifier of this registration of the generation, as a string.
+	 * The same rules apply as for registration_id on IndexEntry.
+	 */
+	optional string registration_id = 4;
 }

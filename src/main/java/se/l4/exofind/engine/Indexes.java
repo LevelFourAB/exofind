@@ -2944,7 +2944,7 @@ public class Indexes implements RegistryPoller.Listener {
 					 * index is registered under the same name.
 					 */
 					try {
-						registry.removeCreated(index.index(), registered.createdAt());
+						registry.removeCreated(registered);
 					} catch(RuntimeException removeFailed) {
 						e.addSuppressed(removeFailed);
 					}

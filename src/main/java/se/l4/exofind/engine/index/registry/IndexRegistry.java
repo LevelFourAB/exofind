@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
@@ -388,9 +389,12 @@ public class IndexRegistry {
 		var now = Instant.now();
 		var created = new RegisteredIndex(
 			index,
-			Lists.immutable.of(new RegisteredIndex.Generation(generation, now, null)),
+			Lists.immutable.of(
+				new RegisteredIndex.Generation(generation, now, newRegistration(), null)
+			),
 			generation,
 			now,
+			newRegistration(),
 			Sets.immutable.empty(),
 			null
 		);
@@ -404,7 +408,7 @@ public class IndexRegistry {
 				}
 
 				return indexes.toList().with(created);
-			}, indexes -> isRegistration(indexes, index, now));
+			}, indexes -> isRegistration(indexes, created));
 		} catch(RegistryException e) {
 			if(e.getCause() instanceof RegistryWriteUnknownException) {
 				/*
@@ -414,7 +418,7 @@ public class IndexRegistry {
 				 * documents of the deleted index, so it is taken back.
 				 */
 				try {
-					removeCreated(index, now);
+					removeCreated(created);
 				} catch(RuntimeException removeFailed) {
 					e.addSuppressed(removeFailed);
 				}
@@ -460,9 +464,15 @@ public class IndexRegistry {
 			return new RegisteredIndex(
 				entry.name(),
 				entry.generations().toList()
-					.with(new RegisteredIndex.Generation(generation, Instant.now(), null)),
+					.with(new RegisteredIndex.Generation(
+						generation,
+						Instant.now(),
+						newRegistration(),
+						null
+					)),
 				entry.live(),
 				entry.createdAt(),
+				entry.registration(),
 				entry.requiredFeatures(),
 				entry.settingsVersion()
 			);
@@ -544,6 +554,7 @@ public class IndexRegistry {
 				entry.generations(),
 				generation,
 				entry.createdAt(),
+				entry.registration(),
 				entry.requiredFeatures(),
 				entry.settingsVersion()
 			);
@@ -604,11 +615,12 @@ public class IndexRegistry {
 					entry.generations().reject(g -> g.name().equals(generation)),
 					entry.live(),
 					entry.createdAt(),
+					entry.registration(),
 					entry.requiredFeatures(),
 					entry.settingsVersion()
 				);
 			}, (written, stored) -> stored.generation(generation)
-				.filter(g -> sameTime(g.createdAt(), removed[0].createdAt()))
+				.filter(g -> g.isSameRegistration(removed[0]))
 				.isEmpty());
 		} catch(RegistryException e) {
 			throw removalUnknown(e, IndexName.of(index, generation), removed[0] == null
@@ -652,7 +664,7 @@ public class IndexRegistry {
 
 				removed[0] = entry;
 				return indexes.reject(existing -> existing.name().equals(index));
-			}, indexes -> !isRegistration(indexes, index, removed[0].createdAt()));
+			}, indexes -> !isRegistration(indexes, removed[0]));
 		} catch(RegistryException e) {
 			throw removalUnknown(e, IndexName.of(index), removed[0] == null
 				? null
@@ -668,40 +680,35 @@ public class IndexRegistry {
 
 	/**
 	 * Take an index out of the registry while the stored registry still holds
-	 * the registration made at {@code createdAt}, for a create that takes its
+	 * the registration that {@link #create} made, for a create that takes its
 	 * own registration back. An index of the same name that another node
-	 * deleted and created again since carries another time, and is left in
-	 * the registry.
+	 * deleted and created again since is another registration, and is left in
+	 * the registry. See {@link RegisteredIndex#isSameRegistration}.
 	 *
-	 * <p>Times are compared to the millisecond, the precision the registry
-	 * stores them in.
-	 *
-	 * @param index
-	 * @param createdAt
-	 *   when the registration to remove was made, as {@link #create} answered
-	 *   it
+	 * @param created
+	 *   the index as {@link #create} answered it
 	 * @return
 	 *   whether the registration was removed. {@code false} when the registry
 	 *   no longer holds the index, or holds a later registration of it
 	 * @throws RegistryException
 	 *   if the registry could not be read or written
 	 */
-	public boolean removeCreated(String index, Instant createdAt) {
-		if(!refresh() || !isRegistration(snapshot.get().indexes(), index, createdAt)) {
+	public boolean removeCreated(RegisteredIndex created) {
+		if(!refresh() || !isRegistration(snapshot.get().indexes(), created)) {
 			return false;
 		}
 
 		var removed = new boolean[1];
 		change(indexes -> {
-			removed[0] = isRegistration(indexes, index, createdAt);
+			removed[0] = isRegistration(indexes, created);
 			return removed[0]
-				? indexes.reject(existing -> existing.name().equals(index))
+				? indexes.reject(existing -> existing.name().equals(created.name()))
 				: indexes;
 		});
 
 		if(removed[0]) {
 			logger.atInfo()
-				.addKeyValue("index", index)
+				.addKeyValue("index", created.name())
 				.log("Removed index");
 		}
 
@@ -709,18 +716,14 @@ public class IndexRegistry {
 	}
 
 	/**
-	 * Whether the indexes hold the registration of {@code index} made at
-	 * {@code createdAt}, compared to the millisecond.
+	 * Whether the indexes hold the same registration as {@code registered}.
 	 */
 	private static boolean isRegistration(
 		ListIterable<RegisteredIndex> indexes,
-		String index,
-		Instant createdAt
+		RegisteredIndex registered
 	) {
-		var entry = indexes.detect(existing -> existing.name().equals(index));
-		return entry != null
-			&& entry.createdAt() != null
-			&& entry.createdAt().toEpochMilli() == createdAt.toEpochMilli();
+		var entry = indexes.detect(existing -> existing.name().equals(registered.name()));
+		return entry != null && entry.isSameRegistration(registered);
 	}
 
 	/**
@@ -748,18 +751,6 @@ public class IndexRegistry {
 	}
 
 	/**
-	 * Whether two times are the same to the millisecond, the precision the
-	 * registry stores them in. Two unknown times are the same.
-	 */
-	private static boolean sameTime(Instant a, Instant b) {
-		if(a == null || b == null) {
-			return a == b;
-		}
-
-		return a.toEpochMilli() == b.toEpochMilli();
-	}
-
-	/**
 	 * Whether the stored entry holds the generation as the written entry
 	 * added it, and not a generation of the same name made by another write.
 	 */
@@ -770,7 +761,14 @@ public class IndexRegistry {
 	) {
 		var added = written.generation(generation).orElse(null);
 		var found = stored.generation(generation).orElse(null);
-		return added != null && found != null && sameTime(added.createdAt(), found.createdAt());
+		return added != null && found != null && added.isSameRegistration(found);
+	}
+
+	/**
+	 * A new random identifier for a registration.
+	 */
+	private static String newRegistration() {
+		return UUID.randomUUID().toString();
 	}
 
 	/**
@@ -868,6 +866,7 @@ public class IndexRegistry {
 							entry.generations(),
 							entry.live(),
 							entry.createdAt(),
+							entry.registration(),
 							entry.requiredFeatures(),
 							settings.version()
 						);
@@ -886,12 +885,14 @@ public class IndexRegistry {
 							? new RegisteredIndex.Generation(
 								g.name(),
 								g.createdAt(),
+								g.registration(),
 								manifest.version()
 							)
 							: g
 						),
 						entry.live(),
 						entry.createdAt(),
+						entry.registration(),
 						entry.requiredFeatures(),
 						entry.settingsVersion()
 					);
@@ -1013,7 +1014,7 @@ public class IndexRegistry {
 		}, indexes -> {
 			var written = updated[0];
 			var entry = indexes.detect(existing -> existing.name().equals(index));
-			if(entry == null || !sameTime(entry.createdAt(), written.createdAt())
+			if(entry == null || !entry.isSameRegistration(written)
 				|| !landed.test(written, entry)) {
 				return false;
 			}

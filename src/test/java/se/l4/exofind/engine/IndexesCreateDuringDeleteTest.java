@@ -224,4 +224,76 @@ public class IndexesCreateDuringDeleteTest {
 			node.close();
 		}
 	}
+
+	/**
+	 * Two nodes can give their registrations of a name the same millisecond:
+	 * their clocks are not the same clock, and one fast node does a delete
+	 * and a create within a millisecond. The registration of the other node
+	 * is still not the one the failed create made.
+	 */
+	@Test
+	void aFailedCreateDoesNotUnregisterAnIndexAnotherNodeCreatedInTheSameMillisecond()
+		throws IOException
+	{
+		// Given two nodes over one registry
+		var storage = new InMemoryRegistryStorage();
+		var registryA = new IndexRegistry(storage, Duration.ofMinutes(5));
+		var registryB = new IndexRegistry(storage, Duration.ofMinutes(5));
+
+		var removalsB = new RecordingIndexRemovals();
+		var hook = new AtomicReference<Runnable>();
+		var removalsA = new RecordingIndexRemovals() {
+			@Override
+			public void prepareForIndex(String index) {
+				var run = hook.getAndSet(null);
+				if(run != null) {
+					run.run();
+				}
+
+				throw new UncheckedIOException(new IOException("Storage could not be cleared"));
+			}
+		};
+
+		var nodeA = newNode(storageDirectory.resolve("a"), registryA, removalsA);
+		var nodeB = newNode(storageDirectory.resolve("b"), registryB, removalsB);
+		try {
+			// And node B deletes the name and creates it again in the millisecond node A registered it
+			hook.set(() -> {
+				var registeredByA = storage.stored().getIndexesList().stream()
+					.filter(entry -> entry.getName().equals("books"))
+					.findFirst()
+					.orElseThrow()
+					.getCreatedAt();
+
+				try {
+					nodeB.delete("books");
+					nodeB.create("books", keyed());
+				} catch(IOException e) {
+					throw new RuntimeException(e);
+				}
+
+				var store = storage.stored().toBuilder();
+				for(int i = 0; i < store.getIndexesCount(); i++) {
+					if(store.getIndexes(i).getName().equals("books")) {
+						store.setIndexes(i, store.getIndexes(i).toBuilder().setCreatedAt(registeredByA));
+					}
+				}
+				storage.set(store.build());
+			});
+
+			// When the create on node A fails after the registration
+			assertThrows(UncheckedIOException.class, () -> nodeA.create("books", keyed()));
+
+			// Then the index node B created is still registered
+			registryB.refresh();
+			assertThat(
+				"failed create removed the registration of another node",
+				registryB.get("books").isPresent(),
+				is(true)
+			);
+		} finally {
+			nodeA.close();
+			nodeB.close();
+		}
+	}
 }

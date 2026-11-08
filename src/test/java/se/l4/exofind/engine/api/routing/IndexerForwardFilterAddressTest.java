@@ -88,8 +88,9 @@ public class IndexerForwardFilterAddressTest {
 		when(indexes.getRegistered("books")).thenReturn(Optional.of(
 			new RegisteredIndex(
 				"books",
-				Lists.immutable.of(new RegisteredIndex.Generation("1", null, null)),
+				Lists.immutable.of(new RegisteredIndex.Generation("1", null, null, null)),
 				"1",
+				null,
 				null,
 				Sets.immutable.empty(),
 				null

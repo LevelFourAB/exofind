@@ -124,8 +124,9 @@ public class IndexerForwardFilterTest {
 		when(indexes.getRegistered(index)).thenReturn(Optional.of(
 			new RegisteredIndex(
 				index,
-				Lists.immutable.of(new RegisteredIndex.Generation("1", null, null)),
+				Lists.immutable.of(new RegisteredIndex.Generation("1", null, null, null)),
 				"1",
+				null,
 				null,
 				Sets.immutable.empty(),
 				null
