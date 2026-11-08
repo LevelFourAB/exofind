@@ -1615,13 +1615,26 @@ public class ReindexJobs {
 				 * empty target it would promote a generation without every
 				 * document at or below the cursor.
 				 */
-				storage.write(
+				var written = storage.write(
 					index,
 					job.withError("The source or target generation no longer exists")
 						.written(node, Instant.now())
 						.toStore(),
 					stored.version()
 				);
+
+				/*
+				 * A source that is still the one the job read records every
+				 * write for the job. Nothing reads that log after the job
+				 * failed, and only the end of a later job would stop it.
+				 */
+				if(
+					written != null
+						&& registered != null
+						&& isJobGeneration(registered, job.source(), job.sourceCreatedAt())
+				) {
+					endTrackingQuietly(job);
+				}
 				return;
 			}
 

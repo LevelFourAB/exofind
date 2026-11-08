@@ -693,6 +693,42 @@ public class ReindexJobsTest {
 	}
 
 	/**
+	 * A job whose target is gone cannot be resumed and is closed as failed.
+	 * Closing it must also stop the source recording changes for it, or the
+	 * log grows with every write until some later job ends it.
+	 */
+	@Test
+	public void aJobWhoseTargetIsGoneEndsTrackingOnTheSource() throws Exception {
+		// Given
+		var source = catalogue();
+		indexes.createGeneration("catalogue@2", definition().build());
+		var registered = registry.get("catalogue").orElseThrow();
+
+		// The node that ran the job tracked the source
+		source.beginChangeTracking();
+		source.commit();
+
+		/*
+		 * The target is deleted, and the delete cannot fail the job. The
+		 * record is written after the delete, so the delete finds no record
+		 * and the resume must close the job.
+		 */
+		indexes.delete("catalogue@2");
+		writeCopyingRecord(
+			registered.generation("1").orElseThrow().createdAt(),
+			registered.generation("2").orElseThrow().createdAt()
+		);
+
+		// When
+		jobs.onStart(null);
+		awaitFinished("catalogue");
+
+		// Then
+		assertThat(jobs.get("catalogue").orElseThrow().phase(), is(ReindexPhase.FAILED));
+		assertTrue(indexes.getOrThrow("catalogue").getChangeLog().isEmpty());
+	}
+
+	/**
 	 * A field dropped from the definition of the source is not part of its
 	 * documents anymore. A reindex into a generation without that field must
 	 * copy those documents rather than fail on them.
